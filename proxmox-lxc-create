@@ -1,0 +1,218 @@
+#!/bin/sh
+set -e
+set -u
+
+if test -e .env; then
+    # shellcheck disable=SC1091
+    . .env
+fi
+if test -e .env.secret; then
+    # shellcheck disable=SC1091
+    . .env.secret || true
+fi
+
+if test -z "${PROXMOX_SERVER:-}" ||
+    test -z "${PROXMOX_TOKEN_ID:-}" ||
+    test -z "${PROXMOX_TOKEN_SECRET:-}" ||
+    test -z "${PROXMOX_TARGET_NODE:-}"; then
+    echo "./.env or ./.env.secret should contain values like these:"
+    echo "    PROXMOX_SERVER='10.x.x.x'"
+    echo "    PROXMOX_TARGET_NODE='pve1'"
+    echo "    PROXMOX_TOKEN_ID='<user>@<strategy>!<token-name>'"
+    echo "    PROXMOX_TOKEN_SECRET='00000000-0000-4000-8000-000000000000'"
+    exit 1
+fi
+
+my_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
+my_base_url="https://${PROXMOX_SERVER}:8006/api2/json"
+my_curl="curl -k --max-time 15 -fsSL"
+
+fn_discover() { (
+    echo "${my_base_url}/"
+    ${my_curl} -H "${my_auth}" \
+        "${my_base_url}/" |
+        jq '.'
+); }
+
+fn_status() { (
+    echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status"
+    ${my_curl} -H "${my_auth}" \
+        "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status" |
+        jq '.'
+); }
+
+fn_lxc_last_id() { (
+    #echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc"
+    my_lxcs="$(
+        ${my_curl} -H "${my_auth}" \
+            "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc"
+    )"
+    my_lxc_last_id="$(
+        echo "${my_lxcs}" |
+            jq -r '.data[].vmid' | sort | tail -n 1
+    )"
+    my_lxc_next_id="$((my_lxc_last_id + 1))"
+    echo "${my_lxc_next_id}"
+); }
+
+fn_resources_next_id() { (
+    # Or https://192.168.0.3:8006/api2/json/cluster/nextid ?
+    #echo "${my_base_url}/cluster/resources"
+    my_resources="$(
+        ${my_curl} -H "${my_auth}" \
+            "${my_base_url}/cluster/resources"
+    )"
+    my_resource_last_id="$(
+        echo "${my_resources}" |
+            jq -r '.data[].vmid' |
+            grep -v null |
+            sort |
+            tail -n 1
+    )"
+    my_resource_next_id="$((my_resource_last_id + 1))"
+    echo "${my_resource_next_id}"
+); }
+
+fn_create_lxc() { (
+    # https://192.168.0.3:8006/api2/json/nodes/pve1/lxc
+
+    my_next_id="${1}"
+    my_hostname="${2}"
+    my_pubkey="${3}"
+    my_cidr="${4}"
+
+    my_password="$(
+        xxd -l12 -ps /dev/urandom |
+            xxd -r -ps |
+            base64 |
+            tr -d = |
+            tr + - |
+            tr / _
+    )"
+
+    my_task_result="$(
+        ${my_curl} -H "${my_auth}" \
+            -X POST "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" \
+            --data-urlencode "start=1" \
+            --data-urlencode "vmid=${my_next_id}" \
+            --data-urlencode "hostname=${my_hostname}" \
+            --data-urlencode "unprivileged=1" \
+            --data-urlencode "password=${my_password}" \
+            --data-urlencode "ssh-public-keys=${my_pubkey}" \
+            --data-urlencode "ostemplate=local:vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz" \
+            --data-urlencode "rootfs=local-lvm:8,mountoptions=noatime" \
+            --data-urlencode "cores=1" \
+            --data-urlencode "memory=512" \
+            --data-urlencode "swap=0" \
+            --data-urlencode "net0=name=eth0,bridge=vmbr0,ip=${my_cidr},gw=192.168.0.1,rate=50"
+    )"
+    # --data-urlencode "ostemplate=local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst" \
+    # --data-urlencode "ostemplate=local:vztmpl/alpine-3.17-default_20221129_amd64.tar.xz" \
+    #{"success":1,"data":"UPID:pve1:000C38ED:01978844:640D7BB1:vzcreate:101:root@pam:"}
+
+    my_task_id="$(
+        echo "${my_task_result}" |
+            jq -r '.data' |
+            grep '^UPID:' || true
+    )"
+
+    if test "${my_task_id}" = "null"; then
+        echo ""
+        echo "${my_task_result}" |
+            jq '.'
+        echo ""
+        echo "Error: Create failed"
+        echo ""
+        exit 1
+    fi
+
+    echo "${my_task_id}"
+); }
+
+fn_wait_status() { (
+    my_task_id_raw="${1}"
+    my_check_count="${2:-1}"
+
+    my_task_id="$(
+        printf '%s' "${my_task_id_raw}" |
+            xxd -plain |
+            tr -d '\n' |
+            sed 's/\(..\)/%\1/g'
+    )"
+
+    my_task_result="$(
+        ${my_curl} -H "${my_auth}" \
+            "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/tasks/${my_task_id}/status"
+    )"
+
+    my_task_status="$(
+        printf '%s' "${my_task_result}" |
+            jq -r '.data.status'
+    )"
+    echo "Status: ${my_task_status}"
+
+    if test "${my_task_status}" = "running"; then
+        if test "${my_check_count}" -ge 20; then
+            echo "Error: tried 20 times"
+            return 1
+        fi
+
+        sleep 1
+        my_check_count="$((my_check_count + 1))"
+        fn_wait_status "${my_task_id_raw}" "${my_check_count}"
+        return 0
+    fi
+
+    echo "${my_task_result}" | jq '.'
+); }
+
+# TODO
+# https://192.168.0.3:8006/api2/json/pools
+# https://192.168.0.3:8006/api2/json/nodes
+# https://192.168.0.3:8006/api2/json/nodes/pve1/network?type=any_bridge
+
+main() { (
+    my_cidr="${1:-}"
+    my_hostname="${2:-}"
+    my_pubkey="${3:-}"
+
+    if test -f "${my_pubkey}"; then
+        my_pubkey="$(
+            grep '^ssh-' < "${my_pubkey}"
+        )"
+    elif test -z "${my_pubkey}"; then
+        my_pubkey="$(
+            ssh-pubkey 2> /dev/null
+        )"
+    fi
+
+    if test -z "${my_cidr:-}" ||
+        test -z "${my_hostname:-}"; then
+        printf "Finding next available id... "
+        fn_resources_next_id
+        echo ""
+        echo "USAGE"
+        echo "    proxmox-create <cidr> <hostname> [ssh-pubkey]"
+        echo ""
+        echo "EXAMPLE"
+        echo "    proxmox-create 192.168.0.10/24 example.com '${my_pubkey}'"
+        echo ""
+        exit 1
+    fi
+
+    # TODO get next IP
+
+    printf "Finding next available id... "
+    my_next_id="$(
+        fn_resources_next_id
+    )"
+    echo "${my_next_id}"
+
+    my_task_id="$(
+        fn_create_lxc "${my_next_id}" "${my_hostname}" "${my_pubkey}" "${my_cidr}"
+    )"
+    echo "Waiting for ${my_task_id}..."
+    fn_wait_status "${my_task_id}"
+); }
+
+main "${@:-}"
