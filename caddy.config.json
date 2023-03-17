@@ -1,0 +1,179 @@
+{
+  "apps": {
+    "http": {
+      "servers": {
+        "srv0": {
+          "listen": [":443"],
+          "automatic_https": {
+            "disable": true
+          },
+          "routes": [
+            {
+              "match": [
+                {
+                  "host": ["lxc100.duckdns.org"]
+                }
+              ],
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "encodings": {
+                            "gzip": {}
+                          },
+                          "handler": "encode",
+                          "prefer": ["gzip"]
+                        },
+                        {
+                          "handler": "reverse_proxy",
+                          "headers": {
+                            "request": {
+                              "set": {
+                                "Host": [
+                                  "{http.reverse_proxy.upstream.hostport}"
+                                ]
+                              }
+                            }
+                          },
+                          "transport": {
+                            "protocol": "http"
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "localhost:3000"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "terminal": true
+            }
+          ],
+          "listener_wrappers": [
+            {
+              "wrapper": "layer4",
+              "routes": [
+                {
+                  "match": [
+                    {
+                      "tls": {}
+                    }
+                  ],
+                  "handle": [
+                    {
+                      "handler": "subroute",
+                      "routes": [
+                        {
+                          "match": [
+                            {
+                              "tls": {
+                                "sni": ["lxc100.duckdns.org"]
+                              }
+                            }
+                          ],
+                          "handle": [
+                            {
+                              "handler": "tls",
+                              "connection_policies": [
+                                {
+                                  "alpn": ["http/1.1"]
+                                }
+                              ]
+                            },
+                            {
+                              "handler": "subroute",
+                              "routes": [
+                                {
+                                  "match": [{ "ssh": {} }],
+                                  "handle": [
+                                    {
+                                      "handler": "proxy",
+                                      "upstreams": [
+                                        { "dial": ["localhost:22"] }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "match": [
+                                    {
+                                      "http": [
+                                        {
+                                          "host": ["lxc100.duckdns.org"]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "certificates": {
+        "automate": [
+          "localhost",
+          "192.168.0.4",
+          "lxc100.duckdns.org",
+          "lxc101.duckdns.org"
+        ]
+      },
+      "automation": {
+        "policies": [
+          {
+            "subjects": ["localhost", "192.168.0.4"],
+            "issuers": [
+              {
+                "module": "internal"
+              }
+            ]
+          },
+          {
+            "subjects": ["lxc100.duckdns.org", "lxc101.duckdns.org"],
+            "issuers": [
+              {
+                "challenges": {
+                  "dns": {
+                    "provider": {
+                      "api_token": "{env.DUCKDNS_API_TOKEN}",
+                      "name": "duckdns"
+                    }
+                  }
+                },
+                "module": "acme"
+              },
+              {
+                "challenges": {
+                  "dns": {
+                    "provider": {
+                      "api_token": "{env.DUCKDNS_API_TOKEN}",
+                      "name": "duckdns"
+                    }
+                  }
+                },
+                "module": "zerossl"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
+
