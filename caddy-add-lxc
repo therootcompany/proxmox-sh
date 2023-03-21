@@ -237,6 +237,10 @@ main() { (
         echo "    caddy-add-lxc ct103 lxc103.duckdns.org 192.168.0.103 44380"
         echo "    caddy-add-lxc ct103 lxc103.duckdns.org 192.168.0.103"
         echo ""
+        echo "IMPORTANT"
+        echo "    BAD:  caddy run --config ./caddy.json # Will NOT persist!"
+        echo "    GOOD: caddy run --resume"
+        echo ""
 
         exit 1
     fi
