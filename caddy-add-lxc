@@ -191,6 +191,12 @@ fn_add_reverse_proxy_tls() { (
                     {
                       "handler": "reverse_proxy",
 
+                      "headers": {
+                        "request": {
+                          "set": { "Host": [ "'"$my_lxc_ip"'" ] }
+                        }
+                      },
+
                       "transport": {
                         "protocol": "http",
                         "tls": { "insecure_skip_verify": true }
