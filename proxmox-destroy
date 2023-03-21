@@ -1,0 +1,127 @@
+#!/bin/sh
+set -e
+set -u
+
+if test -e .env; then
+    # shellcheck disable=SC1091
+    . .env
+fi
+if test -e .env.secret; then
+    # shellcheck disable=SC1091
+    . .env.secret || true
+fi
+
+if test -z "${PROXMOX_SERVER:-}" ||
+    test -z "${PROXMOX_TOKEN_ID:-}" ||
+    test -z "${PROXMOX_TOKEN_SECRET:-}" ||
+    test -z "${PROXMOX_TARGET_NODE:-}"; then
+    echo "./.env or ./.env.secret should contain values like these:"
+    echo "    PROXMOX_SERVER='10.x.x.x'"
+    echo "    PROXMOX_TARGET_NODE='pve1'"
+    echo "    PROXMOX_TOKEN_ID='<user>@<strategy>!<token-name>'"
+    echo "    PROXMOX_TOKEN_SECRET='00000000-0000-4000-8000-000000000000'"
+    exit 1
+fi
+
+my_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
+my_base_url="https://${PROXMOX_SERVER}:8006/api2/json"
+my_curl="curl -k --max-time 15 -fsSL"
+
+fn_destroy() { (
+    my_ctid="${1:-}"
+    my_url="${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc/${my_ctid}?purge=1&destroy-unreferenced-disks=1"
+    echo 2>&1 "DELETE ${my_url}"
+    my_task_result="$(
+        ${my_curl} -H "${my_auth}" \
+            -X DELETE \
+            "${my_url}"
+    )"
+    echo 2>&1 "${my_task_result}"
+
+    my_task_id="$(
+        echo "${my_task_result}" |
+            jq -r '.data' |
+            grep '^UPID:' || true
+    )"
+
+    if test "${my_task_id}" = "null"; then
+        echo ""
+        echo "${my_task_result}" |
+            jq '.'
+        echo ""
+        echo "Error: Create failed"
+        echo ""
+        exit 1
+    fi
+
+    echo "${my_task_id}"
+); }
+
+fn_wait_status() { (
+    my_task_id_raw="${1}"
+    my_check_count="${2:-1}"
+
+    my_task_id="$(
+        printf '%s' "${my_task_id_raw}" |
+            xxd -plain |
+            tr -d '\n' |
+            sed 's/\(..\)/%\1/g'
+    )"
+
+    echo 2>&1 "${my_task_id_raw}"
+    my_task_result="$(
+        my_url="${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/tasks/${my_task_id}/status"
+        echo 2>&1 "${my_url}"
+        ${my_curl} \
+            -H "${my_auth}" \
+            "${my_url}"
+    )"
+
+    echo 2>&1 "${my_task_result}"
+    my_task_status="$(
+        printf '%s' "${my_task_result}" |
+            jq -r '.data.status'
+    )"
+    echo "Status: ${my_task_status}"
+
+    if test "${my_task_status}" = "running"; then
+        if test "${my_check_count}" -ge 20; then
+            echo "Error: tried 20 times"
+            return 1
+        fi
+
+        sleep 1
+        my_check_count="$((my_check_count + 1))"
+        fn_wait_status "${my_task_id_raw}" "${my_check_count}"
+        return 0
+    fi
+
+    echo "${my_task_result}" | jq '.'
+); }
+
+main() { (
+    my_ctid="${1:-}"
+
+    if test -z "${my_ctid:-}"; then
+        ${my_curl} -H "${my_auth}" \
+            "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" | jq -r '.data[]'
+        echo ""
+        echo "USAGE"
+        echo "    proxmox-destroy <ctid>"
+        echo ""
+        echo "EXAMPLE"
+        echo "    proxmox-destroy 999"
+        echo ""
+        exit 1
+    fi
+
+    for my_ctid in "${@}"; do
+        my_task_id="$(
+            fn_destroy "${my_ctid}"
+        )"
+    done
+    # echo "Waiting for ${my_task_id}..."
+    # fn_wait_status "${my_task_id}"
+); }
+
+main "${@:-}"
