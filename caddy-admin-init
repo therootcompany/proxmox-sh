@@ -1,0 +1,305 @@
+#!/bin/sh
+set -e
+set -u
+
+if test -e ~/.config/caddy/env; then
+    # shellcheck disable=SC1090
+    . ~/.config/caddy/env
+fi
+
+if test -z "${CADDY_USER:-}" ||
+    test -z "${CADDY_BCRYPT:-}"; then
+    echo ""
+    echo "Run 'caddy hash-password' and place the values in '~/.config/caddy/env'"
+
+    echo "
+    # In the SERVER's ~/.config/caddy/env:
+    # (note the DOUBLE quotes, due to https://github.com/caddyserver/caddy/pull/5437)
+    CADDY_USER=\"my-user\"
+    CADDY_BCRYPT=\"the-result-of-caddy-hashpassword\"
+
+    # In your LOCAL ~/.config/caddy/env:
+    # (note the SINGLE quotes, for shell)
+    CADDY_USER='my-user'
+    CADDY_PASS='my-pass'
+    "
+    exit 1
+fi
+
+fn_admin_init() { (
+    # my_debug_level="DEBUG"
+    my_debug_level="INFO"
+    my_admin_ip="${1:-}"
+    my_admin_domain="${2:-}"
+
+    curl -fsS "http://localhost:2019/load" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        --data-binary '
+            {
+              "admin": {
+                "config": {
+                  "persist": true
+                }
+              },
+              "logging": {
+                "logs": {
+                  "default": {
+                    "level": "'"${my_debug_level}"'"
+                  }
+                }
+              },
+              "apps": {
+                "http": {
+                  "servers": {
+                    "srv443": {
+                      "listen": [":443"],
+                      "automatic_https": {
+                        "disable": true
+                      },
+                      "routes": [
+                        {
+                          "match": [
+                            {
+                              "host": ["'"${my_admin_domain}"'"]
+                            }
+                          ],
+                          "handle": [
+                            {
+                              "handler": "subroute",
+                              "routes": [
+                                {
+                                  "handle": [
+                                    {
+                                      "handler": "authentication",
+                                      "providers": {
+                                        "http_basic": {
+                                          "accounts": [
+                                            {
+                                              "password": "{env.CADDY_BCRYPT}",
+                                              "username": "{env.CADDY_USER}"
+                                            }
+                                          ],
+                                          "hash": {
+                                            "algorithm": "bcrypt"
+                                          },
+                                          "hash_cache": {}
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "handler": "reverse_proxy",
+                                      "headers": {
+                                        "request": {
+                                          "set": {
+                                            "Host": [
+                                              "localhost:2019"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "upstreams": [
+                                        {
+                                          "dial": "localhost:2019"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ],
+                          "terminal": true
+                        }
+                      ],
+                      "listener_wrappers": [
+                        {
+                          "wrapper": "layer4",
+                          "routes": [
+                            {
+                              "match": [
+                                {
+                                  "tls": {}
+                                }
+                              ],
+                              "handle": [
+                                {
+                                  "handler": "subroute",
+                                  "routes": [
+                                    {
+                                      "match": [
+                                        {
+                                          "tls": {
+                                            "sni": [
+                                              "'"${my_admin_domain}"'"
+                                            ]
+                                          }
+                                        }
+                                      ],
+                                      "handle": [
+                                        {
+                                          "handler": "tls",
+                                          "connection_policies": [
+                                            {
+                                              "alpn": [
+                                                "http/1.1"
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "handler": "subroute",
+                                          "routes": [
+                                            {
+                                              "match": [
+                                                {
+                                                  "ssh": {}
+                                                }
+                                              ],
+                                              "handle": [
+                                                {
+                                                  "handler": "proxy",
+                                                  "upstreams": [
+                                                    {
+                                                      "dial": [
+                                                        "localhost:22"
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "match": [
+                                                {
+                                                  "http": [
+                                                    {
+                                                      "host": [
+                                                        "'"${my_admin_domain}"'"
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "srv80": {
+                      "listen": [":80"],
+                      "routes": [
+                        {
+                          "handle": [
+                            {
+                              "handler": "static_response",
+                              "headers": {
+                                "Location": [
+                                  "https://{http.request.host}{http.request.uri}"
+                                ]
+                              },
+                              "status_code": 302
+                            }
+                          ],
+                          "terminal": true
+                        }
+                      ]
+                    }
+                  }
+                },
+                "tls": {
+                  "certificates": {
+                    "automate": [
+                      "localhost",
+                      "'"${my_admin_ip}"'",
+                      "'"${my_admin_domain}"'"
+                    ]
+                  },
+                  "automation": {
+                    "policies": [
+                      {
+                        "@id": "caddy_admin_tls_policy_internal",
+                        "subjects": ["localhost", "'"${my_admin_ip}"'"],
+                        "issuers": [
+                          {
+                            "module": "internal"
+                          }
+                        ]
+                      },
+                      {
+                        "@id": "caddy_admin_tls_policy_acme",
+                        "subjects": ["'"${my_admin_domain}"'"],
+                        "issuers": [
+                          {
+                            "module": "acme"
+                          },
+                          {
+                            "module": "zerossl"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+        '
+
+    # curl -fsS "http://localhost:2019/load" \
+    #     -H "Content-Type: application/json" \
+    #     --data-binary @config.json
+
+    # "http_basic": {
+    #   "accounts": [
+    #     {
+    #       "password": "'"${CADDY_BCRYPT}"'",
+    #       "username": "'"${CADDY_USER}"'"
+    #     }
+    #   ],
+    #   "hash": {
+    #     "algorithm": "bcrypt"
+    #   },
+    #   "hash_cache": {}
+    # }
+); }
+
+main() { (
+    #fn_get_config
+    #exit 1
+
+    my_admin_ip="${1:-}"
+    my_admin_domain="${2:-}"
+
+    if test -z "${my_admin_ip}" ||
+        test -z "${my_admin_domain}"; then
+
+        echo ""
+        echo "USAGE"
+        echo "    caddy-admin-init <admin-ip> <admin-domain>"
+        echo ""
+        echo "EXAMPLES"
+        echo "    caddy-admin-init 192.168.1.100 caddy.example.com"
+        echo ""
+        echo "IMPORTANT:"
+        echo "    BAD:  caddy run --envfile ~/.config/caddy/env --config ./caddy.json"
+        echo "    GOOD: caddy run --envfile ~/.config/caddy/env --resume"
+        echo ""
+        echo "Changes do NOT persist by default!"
+        echo ""
+
+        exit 1
+    fi
+
+    echo 'Creating Admin Proxy (with "@id": "caddy_admin_tls_policy")...'
+    fn_admin_init "${my_admin_ip}" "${my_admin_domain}"
+); }
+
+main "${@:-}"
