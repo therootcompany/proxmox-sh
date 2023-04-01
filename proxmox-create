@@ -189,13 +189,16 @@ main() { (
     if test -z "${my_cidr:-}" ||
         test -z "${my_hostname:-}"; then
         printf "Finding next available id... "
-        fn_resources_next_id
+        my_next_id="$(
+            fn_resources_next_id
+        )"
+        echo "${my_next_id}"
         echo ""
         echo "USAGE"
         echo "    proxmox-create <cidr> <hostname> [ssh-pubkey]"
         echo ""
         echo "EXAMPLE"
-        echo "    proxmox-create 192.168.0.10/24 example.com '${my_pubkey}'"
+        echo "    proxmox-create 192.168.0.${my_next_id}/24 example.com '${my_pubkey}'"
         echo ""
         exit 1
     fi
