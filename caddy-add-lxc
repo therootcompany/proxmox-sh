@@ -224,6 +224,7 @@ main() { (
     my_lxc_domain="${2:-}"
     my_lxc_ip="${3:-}"
     my_http_port="${4:-}"
+    my_https="${5:-}"
 
     if test -z "${my_lxc_id}" ||
         test -z "${my_lxc_domain}" ||
@@ -231,12 +232,12 @@ main() { (
 
         echo ""
         echo "USAGE"
-        echo "    caddy-add-lxc ct<id> <domain> <internal-ip> [http-port=80]"
+        echo "    caddy-add-lxc ct<id> <domain> <internal-ip> [proxy-port=80] [https]"
         echo ""
         echo "EXAMPLES"
-        echo "    caddy-add-lxc ct103 lxc103.duckdns.org 192.168.0.103 80"
-        echo "    caddy-add-lxc ct103 lxc103.duckdns.org 192.168.0.103 44380"
-        echo "    caddy-add-lxc ct103 lxc103.duckdns.org 192.168.0.103"
+        echo "    caddy-add-lxc  pve1   pve1.example.com 192.168.0.103 8006 https"
+        echo "    caddy-add-lxc ct103 lxc103.example.com 192.168.0.103 80"
+        echo "    caddy-add-lxc ct103 lxc103.example.com 192.168.0.103"
         echo ""
         echo "IMPORTANT"
         echo "    BAD:  caddy run --config ./caddy.json # Will NOT persist!"
@@ -256,11 +257,24 @@ main() { (
     echo "Enabling TLS SNI Routing to SSH:${my_lxc_domain}:22 (\"@id\": \"${my_lxc_id}_tls_routing\")..."
     fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
-    echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-    fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
+    if test "https" = "${my_https}"; then
 
-    # echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-    # fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
+        # FOR EXTERNAL NETWORK DEVICES / HTTPS CONTAINERS
+        echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
+        fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
+
+    elif test -z "${my_https}"; then
+
+        # FOR INTERNAL CONTAINERS
+        echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
+        fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
+
+    else
+
+        echo "unknown option '${my_https}'"
+        exit 1
+
+    fi
 
 ); }
 
