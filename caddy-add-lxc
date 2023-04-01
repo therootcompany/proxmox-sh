@@ -2,8 +2,10 @@
 set -e
 set -u
 
-# shellcheck disable=SC1090
-. ~/.config/caddy/env
+if test -e ~/.config/caddy/env; then
+    # shellcheck disable=SC1090
+    . ~/.config/caddy/env
+fi
 
 # CADDY_HOST
 # CADDY_USER
@@ -12,8 +14,8 @@ set -u
 
 fn_get_config() { (
     curl -fsS --proto '=https' --tlsv1.2 \
-        -u "$CADDY_USER:$CADDY_PASS" \
-        "$CADDY_HOST/config/" | jq
+        -u "${CADDY_USER}:${CADDY_PASS}" \
+        "${CADDY_HOST}/config/" | jq
 ); }
 
 fn_add_tls_policy() { (
@@ -21,14 +23,14 @@ fn_add_tls_policy() { (
     my_lxc_domain="${2:-}"
 
     curl -fsS --proto '=https' --tlsv1.2 \
-        -u "$CADDY_USER:$CADDY_PASS" \
+        -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
         "${CADDY_HOST}/config/apps/tls/automation/policies/..." \
         -H "Content-Type: application/json" \
         --data-binary '
           [{
-            "@id": "'"$my_lxc_id"'_tls_policy",
-            "subjects": [ "'"$my_lxc_domain"'" ]
+            "@id": "'"${my_lxc_id}"'_tls_policy",
+            "subjects": [ "'"${my_lxc_domain}"'" ]
           }]
         '
 ); }
@@ -38,14 +40,14 @@ fn_add_tls_policy_dns() { (
     my_lxc_domain="${2:-}"
 
     curl -fsS --proto '=https' --tlsv1.2 \
-        -u "$CADDY_USER:$CADDY_PASS" \
+        -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
-        "$CADDY_HOST/config/apps/tls/automation/policies/..." \
+        "${CADDY_HOST}/config/apps/tls/automation/policies/..." \
         -H "Content-Type: application/json" \
         --data-binary '
           [{
-            "@id": "'"$my_lxc_id"'_tls_policy",
-            "subjects": [ "'"$my_lxc_domain"'" ],
+            "@id": "'"${my_lxc_id}"'_tls_policy",
+            "subjects": [ "'"${my_lxc_domain}"'" ],
             "issuers": [
               {
                 "challenges": {
@@ -73,11 +75,11 @@ fn_add_tls_automation() { (
     my_lxc_domain="${2:-}"
 
     curl -fsS --proto '=https' --tlsv1.2 \
-        -u "$CADDY_USER:$CADDY_PASS" \
+        -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
         "${CADDY_HOST}/config/apps/tls/certificates/automate/..." \
         -H "Content-Type: application/json" \
-        --data-binary '["'"$my_lxc_domain"'"]'
+        --data-binary '["'"${my_lxc_domain}"'"]'
 ); }
 
 fn_add_tls_routing() { (
@@ -86,13 +88,13 @@ fn_add_tls_routing() { (
     my_lxc_ip="${3:-}"
 
     curl -fsS --proto '=https' --tlsv1.2 \
-        -u "$CADDY_USER:$CADDY_PASS" \
+        -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
-        "${CADDY_HOST}/config/apps/http/servers/$CADDY_SRV/listener_wrappers/0/routes/0/handle/..." \
+        "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/listener_wrappers/0/routes/0/handle/..." \
         -H "Content-Type: application/json" \
         --data-binary '
         [{
-          "@id": "'"$my_lxc_id"'_tls_routing",
+          "@id": "'"${my_lxc_id}"'_tls_routing",
           "handler": "subroute",
           "routes": [
             {
@@ -106,17 +108,17 @@ fn_add_tls_routing() { (
                   "routes": [
                     {
                       "handle": [
-                        { "handler": "proxy", "upstreams": [ { "dial": [ "'"$my_lxc_ip:22"'" ] } ] }
+                        { "handler": "proxy", "upstreams": [ { "dial": [ "'"${my_lxc_ip}:22"'" ] } ] }
                       ],
                       "match": [ { "ssh": {} } ]
                     },
                     {
-                      "match": [ { "http": [ { "host": [ "'"$my_lxc_domain"'" ] } ] } ]
+                      "match": [ { "http": [ { "host": [ "'"${my_lxc_domain}"'" ] } ] } ]
                     }
                   ]
                 }
               ],
-              "match": [ { "tls": { "sni": [ "'"$my_lxc_domain"'" ] } } ]
+              "match": [ { "tls": { "sni": [ "'"${my_lxc_domain}"'" ] } } ]
             }
           ]
         }]'
@@ -129,13 +131,13 @@ fn_add_http_handler() { (
     my_http_port="${4:-}"
 
     curl -fsS --proto '=https' --tlsv1.2 \
-        -u "$CADDY_USER:$CADDY_PASS" \
+        -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
-        "$CADDY_HOST/config/apps/http/servers/$CADDY_SRV/routes/..." \
+        "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/routes/..." \
         -H "Content-Type: application/json" \
         --data-binary '
         [{
-          "@id": "'"$my_lxc_id"'_http_routing",
+          "@id": "'"${my_lxc_id}"'_http_routing",
           "handle": [
             {
               "handler": "subroute",
@@ -146,17 +148,17 @@ fn_add_http_handler() { (
                       "handler": "reverse_proxy",
                       "headers": {
                         "request": {
-                          "set": { "Host": [ "'"$my_lxc_domain"'" ] }
+                          "set": { "Host": [ "'"${my_lxc_domain}"'" ] }
                         }
                       },
-                      "upstreams": [ { "dial": "'"$my_lxc_ip:${my_http_port}"'" } ]
+                      "upstreams": [ { "dial": "'"${my_lxc_ip}:${my_http_port}"'" } ]
                     }
                   ]
                 }
               ]
             }
           ],
-          "match": [ { "host": [ "'"$my_lxc_domain"'" ] } ],
+          "match": [ { "host": [ "'"${my_lxc_domain}"'" ] } ],
           "terminal": true
         }]
         '
@@ -175,13 +177,13 @@ fn_add_reverse_proxy_tls() { (
     #   } }
     # },
     curl -fsS --proto '=https' --tlsv1.2 \
-        -u "$CADDY_USER:$CADDY_PASS" \
+        -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
-        "$CADDY_HOST/config/apps/http/servers/$CADDY_SRV/routes/..." \
+        "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/routes/..." \
         -H "Content-Type: application/json" \
         --data-binary '
         [{
-          "@id": "'"$my_lxc_id"'_http_routing",
+          "@id": "'"${my_lxc_id}"'_http_routing",
           "handle": [
             {
               "handler": "subroute",
@@ -193,7 +195,7 @@ fn_add_reverse_proxy_tls() { (
 
                       "headers": {
                         "request": {
-                          "set": { "Host": [ "'"$my_lxc_ip"'" ] }
+                          "set": { "Host": [ "'"${my_lxc_ip}"'" ] }
                         }
                       },
 
@@ -201,14 +203,14 @@ fn_add_reverse_proxy_tls() { (
                         "protocol": "http",
                         "tls": { "insecure_skip_verify": true }
                       },
-                      "upstreams": [ { "dial": "'"$my_lxc_ip:${my_http_port}"'" } ]
+                      "upstreams": [ { "dial": "'"${my_lxc_ip}:${my_http_port}"'" } ]
                     }
                   ]
                 }
               ]
             }
           ],
-          "match": [ { "host": [ "'"$my_lxc_domain"'" ] } ],
+          "match": [ { "host": [ "'"${my_lxc_domain}"'" ] } ],
           "terminal": true
         }]
         '
@@ -218,7 +220,6 @@ main() { (
     #fn_get_config
     #exit 1
 
-    ## TODO move into main
     my_lxc_id="${1:-}"
     my_lxc_domain="${2:-}"
     my_lxc_ip="${3:-}"
@@ -255,11 +256,11 @@ main() { (
     echo "Enabling TLS SNI Routing to SSH:${my_lxc_domain}:22 (\"@id\": \"${my_lxc_id}_tls_routing\")..."
     fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
-    # echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-    # fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
+    echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
+    fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
 
-    echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-    fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
+    # echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
+    # fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
 
 ); }
 
