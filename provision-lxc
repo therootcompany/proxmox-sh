@@ -1,0 +1,136 @@
+#!/bin/sh
+set -e
+set -u
+
+if test -e .env; then
+    # shellcheck disable=SC1091
+    . .env
+fi
+if test -e .env.secret; then
+    # shellcheck disable=SC1091
+    . .env.secret || true
+fi
+
+if test -z "${PROXMOX_SERVER:-}" ||
+    test -z "${PROXMOX_TOKEN_ID:-}" ||
+    test -z "${PROXMOX_TOKEN_SECRET:-}" ||
+    test -z "${PROXMOX_TARGET_NODE:-}"; then
+    echo "./.env or ./.env.secret should contain values like these:"
+    echo "    PROXMOX_SERVER='10.x.x.x'"
+    echo "    PROXMOX_TARGET_NODE='pve1'"
+    echo "    PROXMOX_TOKEN_ID='<user>@<strategy>!<token-name>'"
+    echo "    PROXMOX_TOKEN_SECRET='00000000-0000-4000-8000-000000000000'"
+    exit 1
+fi
+
+my_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
+my_base_url="https://${PROXMOX_SERVER}:8006/api2/json"
+my_curl="curl -k --max-time 15 --proto =https --tlsv1.2 -fsS"
+
+fn_lxc_last_id() { (
+    #echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc"
+    my_lxcs="$(
+        ${my_curl} -H "${my_auth}" \
+            "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc"
+    )"
+    my_lxc_last_id="$(
+        echo "${my_lxcs}" |
+            jq -r '.data[].vmid' | sort | tail -n 1
+    )"
+    my_lxc_next_id="$((my_lxc_last_id + 1))"
+    echo "${my_lxc_next_id}"
+); }
+
+fn_resources_next_id() { (
+    # Or https://192.168.0.3:8006/api2/json/cluster/nextid ?
+    #echo "${my_base_url}/cluster/resources"
+    my_resources="$(
+        ${my_curl} -H "${my_auth}" \
+            "${my_base_url}/cluster/resources"
+    )"
+    my_resource_last_id="$(
+        echo "${my_resources}" |
+            jq -r '.data[].vmid' |
+            grep -v null |
+            sort |
+            tail -n 1
+    )"
+    my_resource_next_id="$((my_resource_last_id + 1))"
+    echo "${my_resource_next_id}"
+); }
+
+fn_ssh_keys() { (
+    my_key_uri="${1:-}"
+
+    my_keys="${my_key_uri}"
+    case "${my_key_uri}" in
+        http:*)
+            echo "please use 'https://' for ssh public key urls"
+            return 1
+            ;;
+        https:*)
+            my_keys="$(
+                ${my_curl} "${my_key_uri}"
+            )"
+            ;;
+        *)
+            if test -e "${my_key_uri}"; then
+                my_keys="$(
+                    cat "${my_key_uri}"
+                )"
+            fi
+            ;;
+    esac
+
+    if test -z "${my_keys}"; then
+        if command -v ssh-pubkey > /dev/null; then
+            my_keys="$(
+                ssh-pubkey 2> /dev/null
+            )"
+        else
+            return
+        fi
+    fi
+
+    printf '%s' "${my_keys}" | grep -v '^#' | grep -E '^(ssh|ecdsa)-[a-zA-Z0-9-]+ AAA'
+); }
+
+main() { (
+    my_hostname="${1:-}"
+    my_pubkey="${2:-}"
+    my_pubkeys=""
+
+    my_net_prefix='192.168.0'
+    my_net_size='24'
+
+    my_pubkeys="$(
+        fn_ssh_keys "${my_pubkey}"
+    )"
+
+    echo ""
+    printf "Finding next available host... "
+
+    my_next_id="$(
+        fn_resources_next_id
+    )"
+    my_ip="${my_net_prefix}.${my_next_id}"
+    my_cidr="${my_ip}/${my_net_size}"
+
+    echo "ct${my_next_id} (${my_cidr})"
+    echo ""
+
+    if test -z "${my_hostname:-}"; then
+        echo "USAGE"
+        echo "    provision-lxc <hostname> [ssh-pubkey-or-file-or-url]"
+        echo ""
+        echo "EXAMPLE"
+        echo "    provision-lxc example.com '${my_pubkeys}'"
+        echo ""
+        exit 1
+    fi
+
+    ./proxmox-create "${my_cidr}" "${my_hostname}" "${my_pubkeys}"
+    ./caddy-add-lxc "ct${my_next_id}" "${my_hostname}" "${my_ip}"
+); }
+
+main "${@:-}"
