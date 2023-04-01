@@ -108,7 +108,10 @@ fn_add_tls_routing() { (
                   "routes": [
                     {
                       "handle": [
-                        { "handler": "proxy", "upstreams": [ { "dial": [ "'"${my_lxc_ip}:22"'" ] } ] }
+                        { "handler": "proxy", "upstreams": [ {
+
+                            "@id": "'"${my_lxc_id}"'_tls_proxy_ip",
+                            "dial": [ "'"${my_lxc_ip}:22"'" ] } ] }
                       ],
                       "match": [ { "ssh": {} } ]
                     },
@@ -151,7 +154,9 @@ fn_add_http_handler() { (
                           "set": { "Host": [ "'"${my_lxc_domain}"'" ] }
                         }
                       },
-                      "upstreams": [ { "dial": "'"${my_lxc_ip}:${my_http_port}"'" } ]
+                      "upstreams": [ {
+                        "@id": "'"${my_lxc_id}"'_http_proxy_ip",
+                        "dial": "'"${my_lxc_ip}:${my_http_port}"'" } ]
                     }
                   ]
                 }
@@ -203,7 +208,9 @@ fn_add_reverse_proxy_tls() { (
                         "protocol": "http",
                         "tls": { "insecure_skip_verify": true }
                       },
-                      "upstreams": [ { "dial": "'"${my_lxc_ip}:${my_http_port}"'" } ]
+                      "upstreams": [ {
+                        "@id": "'"${my_lxc_id}"'_https_proxy_ip",
+                        "dial": "'"${my_lxc_ip}:${my_http_port}"'" } ]
                     }
                   ]
                 }
