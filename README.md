@@ -3,15 +3,41 @@
 Just some scripts for playing around with Proxmox
 
 -   [.env](./example.env)
--   [proxmox-lxc-create](./proxmox-lxc-create)
+-   [provision-lxc](./provision-lxc)
 
     ```sh
     USAGE
-        proxmox-create <cidr> <hostname> [ssh-pubkey]
+        provision-lxc <hostname> [ssh-pubkey-or-file-or-url]
 
     EXAMPLE
-        proxmox-create 192.168.0.10/24 example.com 'ssh-rsa AAAAB...xxxx me@example.local'
+        provision-lxc demo.example.com 'https://example.com/authorized_keys'
     ```
+
+    -   [proxmox-create](./proxmox-create)
+
+        ```sh
+        USAGE
+            proxmox-create <cidr> <hostname> [ssh-pubkey]
+
+        EXAMPLE
+            proxmox-create 192.168.0.100/24 example.com 'ssh-rsa AAAAB...xxxx me@example.local'
+        ```
+
+    -   [caddy-add-lxc](./caddy-add-lxc)
+
+        ```sh
+        USAGE
+            caddy-add-lxc ct<id> <domain> <internal-ip> [proxy-port=80] [https]
+
+        EXAMPLES
+            caddy-add-lxc  pve1   pve1.example.com 192.168.0.103 8006 https
+            caddy-add-lxc ct103 lxc103.example.com 192.168.0.103 80
+            caddy-add-lxc ct103 lxc103.example.com 192.168.0.103
+
+        IMPORTANT
+            BAD:  caddy run --config ./caddy.json # Will NOT persist!
+            GOOD: caddy run --resume
+        ```
 
 # How to Get an API Token
 
