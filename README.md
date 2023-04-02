@@ -23,16 +23,16 @@ Just some scripts for playing around with Proxmox
             proxmox-create 192.168.0.100/24 example.com 'ssh-rsa AAAAB...xxxx me@example.local'
         ```
 
-    -   [caddy-add-lxc](./caddy-add-lxc)
+    -   [caddy-add](./caddy-add)
 
         ```sh
         USAGE
-            caddy-add-lxc ct<id> <domain> <internal-ip> [proxy-port=80] [https]
+            caddy-add ct<id> <domain> <internal-ip> [proxy-port=80] [https]
 
         EXAMPLES
-            caddy-add-lxc  pve1   pve1.example.com 192.168.0.103 8006 https
-            caddy-add-lxc ct103 lxc103.example.com 192.168.0.103 80
-            caddy-add-lxc ct103 lxc103.example.com 192.168.0.103
+            caddy-add  pve1   pve1.example.com 192.168.0.103 8006 https
+            caddy-add ct103 lxc103.example.com 192.168.0.103 80
+            caddy-add ct103 lxc103.example.com 192.168.0.103
 
         IMPORTANT
             BAD:  caddy run --config ./caddy.json # Will NOT persist!

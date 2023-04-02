@@ -130,7 +130,7 @@ main() { (
     fi
 
     ./proxmox-create "${my_cidr}" "${my_hostname}" "${my_pubkeys}"
-    ./caddy-add-lxc "ct${my_next_id}" "${my_hostname}" "${my_ip}"
+    ./caddy-add "ct${my_next_id}" "${my_hostname}" "${my_ip}"
 ); }
 
 main "${@:-}"
