@@ -11,12 +11,12 @@ if test -e .env.secret; then
     . .env.secret || true
 fi
 
-if test -z "${PROXMOX_SERVER:-}" ||
+if test -z "${PROXMOX_HOST:-}" ||
     test -z "${PROXMOX_TOKEN_ID:-}" ||
     test -z "${PROXMOX_TOKEN_SECRET:-}" ||
     test -z "${PROXMOX_TARGET_NODE:-}"; then
     echo "./.env or ./.env.secret should contain values like these:"
-    echo "    PROXMOX_SERVER='10.x.x.x'"
+    echo "    PROXMOX_HOST='10.x.x.x:8006'"
     echo "    PROXMOX_TARGET_NODE='pve1'"
     echo "    PROXMOX_TOKEN_ID='<user>@<strategy>!<token-name>'"
     echo "    PROXMOX_TOKEN_SECRET='00000000-0000-4000-8000-000000000000'"
@@ -24,7 +24,7 @@ if test -z "${PROXMOX_SERVER:-}" ||
 fi
 
 my_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
-my_base_url="https://${PROXMOX_SERVER}:8006/api2/json"
+my_base_url="https://${PROXMOX_HOST}/api2/json"
 my_curl="curl -k --max-time 15 -fsSL"
 
 fn_destroy() { (
