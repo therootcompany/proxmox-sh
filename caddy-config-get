@@ -23,8 +23,8 @@ fn_get_config() { (
 ); }
 
 main() { (
-    if test "help" == "${1:-}" ||
-        test "--help" == "${1:-}" ||
+    if test "help" = "${1:-}" ||
+        test "--help" = "${1:-}" ||
         test -n "${1:-}"; then
 
         echo ""
