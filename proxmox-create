@@ -350,8 +350,10 @@ main() { (
             my_next_ip="101"
         fi
 
+        my_next_id=$((my_next_unit + 0))
         my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
-        my_hostname="example${my_next_ip}.${my_vlan}${my_domain_suffix}"
+        my_hostname="example${my_next_id}.${my_vlan}${my_domain_suffix}"
+
         echo ""
         echo "USAGE"
         echo "    proxmox-create <vlan> <hostname> [ssh-pubkey-file-url-or-string]"
