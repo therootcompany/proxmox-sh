@@ -324,29 +324,40 @@ main() { (
     if test -z "${my_vlan:-}" ||
         test -z "${my_hostname:-}"; then
 
-        : "${my_vlan:-1101}"
-        my_vlan_1="$(
-            echo "${my_vlan}" | cut -c-2
-        )"
-        my_vlan_1=$((my_vlan_1 + 0))
+        if test -n "${my_vlan}"; then
+            echo ""
+            printf "Finding next available IP for vlan${my_vlan}...\n"
+            my_vlan_1="$(
+                echo "${my_vlan}" | cut -c-2
+            )"
+            my_vlan_1=$((my_vlan_1 + 0))
 
-        my_vlan_2="$(
-            echo "${my_vlan}" | cut -c3-
-        )"
-        my_vlan_2=$((my_vlan_2 + 0))
+            my_vlan_2="$(
+                echo "${my_vlan}" | cut -c3-
+            )"
+            my_vlan_2=$((my_vlan_2 + 0))
 
-        printf "Finding next available id... "
-        my_next_unit="$(
-            fn_resources_next_index "${my_vlan}"
-        )"
-        my_next_ip="$((my_next_unit + 100))"
-        echo "${my_next_unit}: # 10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}/24"
+            my_next_unit="$(
+                fn_resources_next_index "${my_vlan}"
+            )"
+            my_next_ip="$((my_next_unit + 100))"
+            echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}/24"
+        else
+            my_vlan="1101}"
+            my_vlan_1="11"
+            my_vlan_2="1"
+            my_next_unit="001"
+            my_next_ip="101"
+        fi
+
+        my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
+        my_hostname="example${my_next_ip}.${my_vlan}${my_domain_suffix}"
         echo ""
         echo "USAGE"
         echo "    proxmox-create <vlan> <hostname> [ssh-pubkey-file-url-or-string]"
         echo ""
         echo "EXAMPLE"
-        echo "    proxmox-create ${my_vlan} example.com ~/.ssh/id_rsa.pub"
+        echo "    proxmox-create ${my_vlan} ${my_hostname} ~/.ssh/id_rsa.pub"
         echo ""
         echo "DEFAULT SSH KEYS (only key comments are shown, for brevity)"
         printf '%s' "${my_pubkeys}" |
