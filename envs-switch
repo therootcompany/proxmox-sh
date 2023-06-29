@@ -72,6 +72,7 @@ main() { (
         echo "        envs-switch proxmox me"
         echo "        envs-switch proxmox other"
         echo ""
+
         return 1
     fi
 
@@ -84,6 +85,8 @@ main() { (
             echo "        mkdir -p ~/.config/${my_config_dir}/"
             echo ""
         } >&2
+
+        return 1
     fi
 
     my_current=
