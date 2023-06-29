@@ -1,0 +1,157 @@
+#!/bin/sh
+set -e
+set -u
+
+fn_list_envs() { (
+    my_current="${1:-}"
+    my_config_dir="${2}"
+
+    cd ~/.config/"${my_config_dir}"/ || exit 1
+
+    {
+        echo "Available envs from ~/.config/${my_config_dir}/:"
+        echo ""
+    } > /dev/tty
+
+    my_first_env=
+    for my_env in *.env; do
+        if test "${my_env}" = "*.env"; then
+
+            {
+                echo "    (none)"
+                echo ""
+            } > /dev/tty
+            echo >&2 "Error: no files match ~/.config/${my_config_dir}/*.env"
+            echo "" > /dev/tty
+
+            return 1
+        fi
+
+        if test "${my_env}" = "current.env"; then
+            continue
+        fi
+
+        if test -z "${my_first_env}"; then
+            my_first_env="${my_env}"
+            if test -z "${my_current}"; then
+                my_current="${my_env}"
+                my_current_new="${my_env}"
+            fi
+        fi
+
+        if test "${my_current}" = "${my_env}"; then
+            echo "    ${my_env} (current)" > /dev/tty
+        else
+            echo "    ${my_env}" > /dev/tty
+        fi
+    done
+    echo "" > /dev/tty
+
+    echo "${my_current_new:-}"
+); }
+
+main() { (
+    my_config_dir="${1:-}"
+    my_current_new="${2:-}"
+
+    echo ""
+
+    if test -z "${my_config_dir}" ||
+        test "${my_config_dir}" = "help" ||
+        test "${my_config_dir}" = "--help"; then
+
+        echo ""
+        echo "envs-switch - switch the 'default.env' for any directory in ~/.config/"
+        echo ""
+        echo "USAGE"
+        echo "        envs-switch <config-dir> [env-name]"
+        echo ""
+        echo "EXAMPLES"
+        echo "        envs-switch proxmox"
+        echo "        envs-switch caddy"
+        echo "        envs-switch proxmox me"
+        echo "        envs-switch proxmox other"
+        echo ""
+        return 1
+    fi
+
+    if ! test -e ~/.config/"${my_config_dir}"/; then
+        {
+            echo "ERROR"
+            echo "        not found: ~/.config/${my_config_dir}/"
+            echo ""
+            echo "SOLUTION"
+            echo "        mkdir -p ~/.config/${my_config_dir}/"
+            echo ""
+        } >&2
+    fi
+
+    my_current=
+    if test -e ~/.config/"${my_config_dir}"/current.env; then
+        if ! test -L ~/.config/"${my_config_dir}"/current.env; then
+            my_ts="$(
+                date '+%F_%H.%M.%S'
+            )"
+            echo "Moving non-link ~/.config/${my_config_dir}/current.env to ~/.config/${my_config_dir}/${my_ts}.env"
+            mv ~/.config/"${my_config_dir}"/current.env ~/.config/"${my_config_dir}/${my_ts}.env"
+        fi
+
+        # shellcheck disable=SC2012
+        my_current="$(
+            ls -l ~/.config/"${my_config_dir}/current.env" |
+                cut -d '>' -f2 |
+                cut -d' ' -f2
+        )"
+    fi
+
+    if test -n "${my_current_new}"; then
+        if ! test -e ~/.config/"${my_config_dir}/${my_current_new}"; then
+            if test -e ~/.config/"${my_config_dir}/${my_current_new}.env"; then
+                my_current_new="${my_current_new}.env"
+            fi
+
+            if test "current.env" = "${my_current_new}"; then
+                {
+                    echo "ERROR"
+                    echo "        can't set 'current.env' to itself"
+                    echo ""
+                } >&2
+                return 1
+            fi
+
+            if ! test -e ~/.config/"${my_config_dir}/${my_current_new}"; then
+                {
+                    echo "ERROR"
+                    echo "        not found: ~/.config/${my_config_dir}/${my_current_new}"
+                    echo ""
+                    echo "SOLUTION"
+                    echo "        Pick one of the available envs"
+                    echo ""
+                    my_current_new="$(
+                        fn_list_envs "${my_current}" "${my_config_dir}"
+                    )"
+                } >&2
+
+                return 1
+            fi
+        fi
+
+        echo "Selecting '~/.config/${my_config_dir}/${my_current_new}' as 'current.env'"
+        ln -sf "./${my_current_new}" ~/.config/"${my_config_dir}/current.env"
+        echo ""
+
+        return 0
+    fi
+
+    my_current_new="$(
+        fn_list_envs "${my_current}" "${my_config_dir}"
+    )"
+
+    if test -n "${my_current_new}"; then
+        echo "Selecting '~/.config/${my_config_dir}/${my_current_new}' as 'current.env'"
+        ln -sf "./${my_current_new}" ~/.config/"${my_config_dir}"/current.env
+    fi
+    echo ""
+); }
+
+main "${@:-}"
