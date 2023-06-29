@@ -4,11 +4,11 @@ set -u
 
 if test -e .env; then
     # shellcheck disable=SC1091
-    . .env
+    . ./.env
 fi
 if test -e .env.secret; then
     # shellcheck disable=SC1091
-    . .env.secret || true
+    . ./.env.secret || true
 fi
 
 if test -z "${PROXMOX_HOST:-}" ||

@@ -4,11 +4,11 @@ set -u
 
 if test -e .env.secret; then
     # shellcheck disable=SC1091
-    . .env.secret || true
+    . ./.env.secret || true
 fi
 if test -e .env; then
     # shellcheck disable=SC1091
-    . .env
+    . ./.env
 fi
 if test -e ~/.config/proxmox/default.env; then
     # shellcheck disable=SC1090
@@ -343,7 +343,7 @@ main() { (
             my_next_ip="$((my_next_unit + 100))"
             echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}/24"
         else
-            my_vlan="1101}"
+            my_vlan="1101"
             my_vlan_1="11"
             my_vlan_2="1"
             my_next_unit="001"
