@@ -10,9 +10,9 @@ if test -e .env; then
     # shellcheck disable=SC1091
     . ./.env
 fi
-if test -e ~/.config/proxmox/default.env; then
+if test -e ~/.config/proxmox/current.env; then
     # shellcheck disable=SC1090
-    . ~/.config/proxmox/default.env || true
+    . ~/.config/proxmox/current.env || true
 fi
 
 if test -z "${PROXMOX_HOST-}" ||
@@ -22,7 +22,7 @@ if test -z "${PROXMOX_HOST-}" ||
 
     {
         # shellcheck disable=2088
-        echo "~/.config/proxmox/default.env should contain values like these:"
+        echo "~/.config/proxmox/current.env should contain values like these:"
         echo "(./.env.secret or ./.env may also be used) "
         echo ""
         echo "    # Config"
@@ -178,8 +178,8 @@ fn_create_lxc() { (
     my_bridge="${PROXMOX_BRIDGE:-vmbr0}"
 
     my_tmpl_vol=cephfs0
-    #my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
-    my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
+    my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
+    #my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
     my_fs_size=8
     my_fs_pool=pool0
     my_fs_opts=lazytime
