@@ -2,30 +2,50 @@
 set -e
 set -u
 
-if test -e .env; then
-    # shellcheck disable=SC1091
-    . .env
-fi
 if test -e .env.secret; then
     # shellcheck disable=SC1091
-    . .env.secret || true
+    . ./.env.secret || true
+fi
+if test -e .env; then
+    # shellcheck disable=SC1091
+    . ./.env
+fi
+if test -e ~/.config/proxmox/current.env; then
+    # shellcheck disable=SC1090
+    . ~/.config/proxmox/current.env || true
 fi
 
-if test -z "${PROXMOX_HOST:-}" ||
-    test -z "${PROXMOX_TOKEN_ID:-}" ||
-    test -z "${PROXMOX_TOKEN_SECRET:-}" ||
-    test -z "${PROXMOX_TARGET_NODE:-}"; then
-    echo "./.env or ./.env.secret should contain values like these:"
-    echo "    PROXMOX_HOST='10.x.x.x'"
-    echo "    PROXMOX_TARGET_NODE='pve1'"
-    echo "    PROXMOX_TOKEN_ID='<user>@<strategy>!<token-name>'"
-    echo "    PROXMOX_TOKEN_SECRET='00000000-0000-4000-8000-000000000000'"
+if test -z "${PROXMOX_HOST-}" ||
+    test -z "${PROXMOX_TOKEN_ID-}" ||
+    test -z "${PROXMOX_TOKEN_SECRET-}" ||
+    test -z "${PROXMOX_TARGET_NODE-}"; then
+
+    {
+        # shellcheck disable=2088
+        echo "~/.config/proxmox/current.env should contain values like these:"
+        echo "(./.env.secret or ./.env may also be used) "
+        echo ""
+        echo "    # Config"
+        echo "    PROXMOX_HOST='pve1.example.net:8006'"
+        echo "    PROXMOX_TARGET_NODE='pve1'"
+        echo "    PROXMOX_BRIDGE='vmbr0'"
+        echo "    PROXMOX_SEARCH_SUFFIX='.localdomain'"
+        echo "    PROXMOX_NAMESERVER='172.17.0.1'"
+        echo ""
+        echo "    # URL, File or String"
+        echo "    PROXMOX_AUTHORIZED_KEYS='https://github.com/me.keys'"
+        echo ""
+        echo "    # Secrets"
+        echo "    PROXMOX_TOKEN_ID='<user>@<strategy>!<token-name>'"
+        echo "    PROXMOX_TOKEN_SECRET='00000000-0000-4000-8000-000000000000'"
+        echo ""
+    } >&2
     exit 1
 fi
 
 my_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
 my_base_url="https://${PROXMOX_HOST}/api2/json"
-my_curl="curl -k --max-time 15 -fsSL"
+my_curl="curl --max-time 15 -fsSL"
 
 fn_discover() { (
     echo "${my_base_url}/"
@@ -55,31 +75,94 @@ fn_lxc_last_id() { (
     echo "${my_lxc_next_id}"
 ); }
 
-fn_resources_next_id() { (
-    # Or https://192.168.0.3:8006/api2/json/cluster/nextid ?
+fn_resources_next_index() { (
+    my_prefix="${1}"
+    my_zero="${2:-000}"
+
+    # Or https://192.168.0.101:8006/api2/json/cluster/nextid ?
     #echo "${my_base_url}/cluster/resources"
     my_resources="$(
         ${my_curl} -H "${my_auth}" \
             "${my_base_url}/cluster/resources"
     )"
-    my_resource_last_id="$(
+    my_resource_ids="$(
         echo "${my_resources}" |
             jq -r '.data[].vmid' |
-            grep -v null |
-            sort |
+            grep "^${my_prefix}" ||
+            echo "${my_prefix}${my_zero}"
+    )"
+    my_resource_last_id="$(
+        echo "${my_resource_ids}" |
+            sort -u |
             tail -n 1
     )"
-    my_resource_next_id="$((my_resource_last_id + 1))"
-    echo "${my_resource_next_id}"
+
+    # 1101001 => 001
+    my_prefix_len="${#my_prefix}"
+    my_suffix_start="$((my_prefix_len + 1))"
+    my_resource_index="$(
+        echo "${my_resource_last_id}" | cut -c"${my_suffix_start}-"
+    )"
+    # it's OVER 9000!! (just to keep leading 0s in the string)
+    my_resource_index="$((my_resource_index + 9001))"
+    # (and now it's not)
+    my_resource_index="$(
+        echo "${my_resource_index}" | cut -c"2-"
+    )"
+
+    echo "${my_resource_index}"
+); }
+
+fn_ssh_keys() { (
+    my_key_uri="${1:-}"
+
+    if test -z "${my_key_uri}"; then
+        if ! command -v ssh-pubkey > /dev/null; then
+            {
+                echo ""
+                echo "ERROR"
+                echo "        'ssh-pubkey' does not exist and no ssh pubkey was given"
+                echo ""
+            } >&2
+
+            return 1
+        fi
+
+        my_keys="$(
+            ssh-pubkey 2> /dev/null
+        )"
+    fi
+
+    my_keys="${my_key_uri}"
+    case "${my_key_uri}" in
+        http:*)
+            echo "please use 'https://' for ssh public key urls"
+            return 1
+            ;;
+        https:*)
+            my_keys="$(
+                ${my_curl} "${my_key_uri}"
+            )"
+            ;;
+        *)
+            if test -e "${my_key_uri}"; then
+                my_keys="$(
+                    cat "${my_key_uri}"
+                )"
+            fi
+            ;;
+    esac
+
+    printf '%s' "${my_keys}" | grep -E '^(ssh|ecdsa)-[a-zA-Z0-9-]+ AAA' || true
 ); }
 
 fn_create_lxc() { (
     # https://192.168.0.3:8006/api2/json/nodes/pve1/lxc
 
-    my_next_id="${1}"
-    my_hostname="${2}"
-    my_pubkey="${3}"
-    my_cidr="${4}"
+    my_vlan="${1}"
+    my_unit="${2}"
+    my_hostname="${3}"
+    my_pubkeys="${4}"
 
     my_password="$(
         xxd -l12 -ps /dev/urandom |
@@ -90,24 +173,43 @@ fn_create_lxc() { (
             tr / _
     )"
 
+    my_search_suffix="${PROXMOX_SEARCH_SUFFIX:-}"
+    my_nameserver="${PROXMOX_NAMESERVER:-}"
+    my_bridge="${PROXMOX_BRIDGE:-vmbr0}"
+
+    my_tmpl_vol=cephfs0
+    my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
+    #my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
+    my_fs_size=8
+    my_fs_pool=pool0
+    my_fs_opts=lazytime
+    my_mp0_pool=pool0
+    my_mp0_size='0.1'
+    my_mp0_mnt='/mnt/storage'
+    my_mp0_opts='lazytime;nodev;nosuid'
+    my_net="$(
+        fn_id_to_net "${my_vlan}" "${my_unit}"
+    )"
     my_task_result="$(
         ${my_curl} -H "${my_auth}" \
             -X POST "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" \
             --data-urlencode "start=1" \
-            --data-urlencode "vmid=${my_next_id}" \
+            --data-urlencode "vmid=${my_vlan}${my_unit}" \
             --data-urlencode "hostname=${my_hostname}" \
             --data-urlencode "unprivileged=1" \
             --data-urlencode "password=${my_password}" \
-            --data-urlencode "ssh-public-keys=${my_pubkey}" \
-            --data-urlencode "ostemplate=local:vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz" \
-            --data-urlencode "rootfs=local-lvm:8,mountoptions=noatime" \
-            --data-urlencode "cores=1" \
+            --data-urlencode "ssh-public-keys=${my_pubkeys}" \
+            --data-urlencode "ostemplate=${my_tmpl_vol}:${my_os_tmpl}" \
+            --data-urlencode "rootfs=${my_fs_pool}:${my_fs_size},mountoptions=${my_fs_opts}" \
+            --data-urlencode "mp0=${my_mp0_pool}:${my_mp0_size},mp=${my_mp0_mnt},mountoptions=${my_mp0_opts}" \
+            --data-urlencode "cores=2" \
+            --data-urlencode "cpulimit=50" \
             --data-urlencode "memory=512" \
             --data-urlencode "swap=0" \
-            --data-urlencode "net0=name=eth0,bridge=vmbr0,ip=${my_cidr},gw=192.168.0.1,rate=50"
+            --data-urlencode "net0=name=eth0,bridge=${my_bridge},tag=${my_vlan},${my_net},rate=91" \
+            --data-urlencode "searchdomain=${my_vlan}${my_search_suffix}" \
+            --data-urlencode "nameserver=${my_nameserver}"
     )"
-    # --data-urlencode "ostemplate=local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst" \
-    # --data-urlencode "ostemplate=local:vztmpl/alpine-3.17-default_20221129_amd64.tar.xz" \
     #{"success":1,"data":"UPID:pve1:000C38ED:01978844:640D7BB1:vzcreate:101:root@pam:"}
 
     my_task_id="$(
@@ -127,6 +229,40 @@ fn_create_lxc() { (
     fi
 
     echo "${my_task_id}"
+); }
+
+# Example
+# vlan=1109, suffix=142
+# mac = 00:52:11:09:01:42
+# gw = 10.11.9.1
+fn_id_to_net() { (
+    # assumed to be always 4-digits (1101-1199)
+    my_vlan="${1}"
+    # assumed to be always 3-digits (101-199)
+    my_unit="${2}"
+    my_ip="$((my_unit + 100))"
+
+    my_vlan_01="$(
+        echo "${my_vlan}" | cut -c-2
+    )"
+    my_vlan_02="$(
+        echo "${my_vlan}" | cut -c3-
+    )"
+    my_vlan_2="$((my_vlan_02 + 0))"
+
+    my_unit_01="$(
+        echo "0${my_unit}" | cut -c-2
+    )"
+    my_unit_02="$(
+        echo "0${my_unit}" | cut -c3-
+    )"
+
+    printf "hwaddr=00:52:%s:%s:%s:%s," \
+        "${my_vlan_01}" "${my_vlan_02}" "${my_unit_01}" "${my_unit_02}"
+    printf "ip=10.%s.%s.%s/24," \
+        "${my_vlan_01}" "${my_vlan_2}" "${my_ip}"
+    printf "gw=10.%s.%s.1" \
+        "${my_vlan_01}" "${my_vlan_2}"
 ); }
 
 fn_wait_status() { (
@@ -172,50 +308,81 @@ fn_wait_status() { (
 # https://192.168.0.3:8006/api2/json/nodes/pve1/network?type=any_bridge
 
 main() { (
-    my_cidr="${1:-}"
+    my_vlan="${1:-}"
     my_hostname="${2:-}"
-    my_pubkey="${3:-}"
+    my_pubkeys="${3:-}"
 
-    if test -f "${my_pubkey}"; then
-        my_pubkey="$(
-            grep '^ssh-' < "${my_pubkey}"
-        )"
-    elif test -z "${my_pubkey}"; then
-        my_pubkey="$(
-            ssh-pubkey 2> /dev/null
-        )"
+    my_pubkeys="${4:-}"
+    if test -z "${my_pubkeys}"; then
+        my_pubkeys="${PROXMOX_AUTHORIZED_KEYS:-}"
     fi
 
-    if test -z "${my_cidr:-}" ||
+    my_pubkeys="$(
+        fn_ssh_keys "${my_pubkeys}"
+    )"
+
+    if test -z "${my_vlan:-}" ||
         test -z "${my_hostname:-}"; then
-        printf "Finding next available id... "
-        my_next_id="$(
-            fn_resources_next_id
-        )"
-        echo "${my_next_id}"
+
+        if test -n "${my_vlan}"; then
+            echo ""
+            printf "Finding next available IP for vlan${my_vlan}...\n"
+            my_vlan_1="$(
+                echo "${my_vlan}" | cut -c-2
+            )"
+            my_vlan_1=$((my_vlan_1 + 0))
+
+            my_vlan_2="$(
+                echo "${my_vlan}" | cut -c3-
+            )"
+            my_vlan_2=$((my_vlan_2 + 0))
+
+            my_next_unit="$(
+                fn_resources_next_index "${my_vlan}"
+            )"
+            my_next_ip="$((my_next_unit + 100))"
+            echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}/24"
+        else
+            my_vlan="1101"
+            my_vlan_1="11"
+            my_vlan_2="1"
+            my_next_unit="001"
+            my_next_ip="101"
+        fi
+
+        my_next_id=$((my_next_unit + 0))
+        my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
+        my_hostname="example${my_next_id}.${my_vlan}${my_domain_suffix}"
+
         echo ""
         echo "USAGE"
-        echo "    proxmox-create <cidr> <hostname> [ssh-pubkey]"
+        echo "    proxmox-create <vlan> <hostname> [ssh-pubkey-file-url-or-string]"
         echo ""
         echo "EXAMPLE"
-        echo "    proxmox-create 192.168.0.${my_next_id}/24 example.com '${my_pubkey}'"
+        echo "    proxmox-create ${my_vlan} ${my_hostname} ~/.ssh/id_rsa.pub"
+        echo ""
+        echo "DEFAULT SSH KEYS (only key comments are shown, for brevity)"
+        printf '%s' "${my_pubkeys}" |
+            cut -d' ' -f3 |
+            sort -u |
+            while read -r my_comment; do
+                echo "    ${my_comment}"
+            done
         echo ""
         exit 1
     fi
 
-    # TODO get next IP
-
     printf "Finding next available id... "
-    my_next_id="$(
-        fn_resources_next_id
+    my_next_unit="$(
+        fn_resources_next_index "${my_vlan}"
     )"
-    echo "${my_next_id}"
+    echo "${my_next_unit}"
 
     my_task_id="$(
-        fn_create_lxc "${my_next_id}" "${my_hostname}" "${my_pubkey}" "${my_cidr}"
+        fn_create_lxc "${my_vlan}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}"
     )"
     echo "Waiting for ${my_task_id}..."
     fn_wait_status "${my_task_id}"
 ); }
 
-main "${@:-}"
+main "${@-}"
