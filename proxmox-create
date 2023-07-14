@@ -45,7 +45,7 @@ fi
 
 my_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
 my_base_url="https://${PROXMOX_HOST}/api2/json"
-my_curl="curl --max-time 15 -fsSL"
+my_curl="curl --max-time 15 --fail-with-body -sSL"
 
 fn_discover() { (
     echo "${my_base_url}/"
@@ -190,6 +190,7 @@ fn_create_lxc() { (
     my_net="$(
         fn_id_to_net "${my_vlan}" "${my_unit}"
     )"
+
     my_task_result="$(
         ${my_curl} -H "${my_auth}" \
             -X POST "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" \
@@ -240,8 +241,13 @@ fn_id_to_net() { (
     my_vlan="${1}"
     # assumed to be always 3-digits (101-199)
     my_unit="${2}"
-    my_ip="$((my_unit + 100))"
 
+    # make 4 digits (to avoid 008 being octal)
+    my_num="1${my_unit}"
+    # remove leading "1"
+    my_num="$((my_num - 1000))"
+
+    my_ip="$((my_num + 100))"
     my_vlan_01="$(
         echo "${my_vlan}" | cut -c-2
     )"
