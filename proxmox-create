@@ -382,6 +382,11 @@ main() { (
     )"
     echo "${my_next_unit}"
 
+    my_net="$(
+        fn_id_to_net "${my_vlan}" "${my_next_unit}"
+    )"
+    echo "${my_net}" | tr ',' '\n    '
+
     my_task_id="$(
         fn_create_lxc "${my_vlan}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}"
     )"
