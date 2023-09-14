@@ -97,15 +97,13 @@ fn_resources_next_index() { (
             tail -n 1
     )"
 
-    # 1101001 => 001
-    my_prefix_len="${#my_prefix}"
-    my_suffix_start="$((my_prefix_len + 1))"
-    my_resource_index="$(
-        echo "${my_resource_last_id}" | cut -c"${my_suffix_start}-"
-    )"
+    # Goal: 1101001 => 002
+    # 0. 1101001 => 1
+    my_resource_index="$((my_resource_last_id % 1000))"
+    # 2. 1 => 9002
     # it's OVER 9000!! (just to keep leading 0s in the string)
     my_resource_index="$((my_resource_index + 9001))"
-    # (and now it's not)
+    # 3. 9002 => 002
     my_resource_index="$(
         echo "${my_resource_index}" | cut -c"2-"
     )"
@@ -378,7 +376,7 @@ main() { (
         exit 1
     fi
 
-    printf "Finding next available id... "
+    printf "Finding next available id for VLAN %s... " "${my_vlan}"
     my_next_unit="$(
         fn_resources_next_index "${my_vlan}"
     )"
