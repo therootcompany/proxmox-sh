@@ -175,14 +175,23 @@ fn_create_lxc() { (
     my_nameserver="${PROXMOX_NAMESERVER:-}"
     my_bridge="${PROXMOX_BRIDGE:-vmbr0}"
 
-    my_tmpl_vol=cephfs0
     my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
-    #my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
+    my_cores=2
+    my_cpulimit=60
+    my_memory=1024
+    my_mp0_size='0.1'
+
+    # my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
+    # my_cores=4
+    # my_cpulimit=100
+    # my_memory=4096
+    # my_mp0_size='100'
+
+    my_tmpl_vol=cephfs0
     my_fs_size=8
     my_fs_pool=pool0
     my_fs_opts=lazytime
     my_mp0_pool=pool0
-    my_mp0_size='0.1'
     my_mp0_mnt='/mnt/storage'
     my_mp0_opts='lazytime;nodev;nosuid'
     my_net="$(
@@ -201,9 +210,9 @@ fn_create_lxc() { (
             --data-urlencode "ostemplate=${my_tmpl_vol}:${my_os_tmpl}" \
             --data-urlencode "rootfs=${my_fs_pool}:${my_fs_size},mountoptions=${my_fs_opts}" \
             --data-urlencode "mp0=${my_mp0_pool}:${my_mp0_size},mp=${my_mp0_mnt},mountoptions=${my_mp0_opts}" \
-            --data-urlencode "cores=2" \
-            --data-urlencode "cpulimit=50" \
-            --data-urlencode "memory=512" \
+            --data-urlencode "cores=${my_cores}" \
+            --data-urlencode "cpulimit=${my_cpulimit}" \
+            --data-urlencode "memory=${my_memory}" \
             --data-urlencode "swap=0" \
             --data-urlencode "net0=name=eth0,bridge=${my_bridge},tag=${my_vlan},${my_net},rate=91" \
             --data-urlencode "searchdomain=${my_vlan}${my_search_suffix}" \
