@@ -292,8 +292,8 @@ fn_wait_status() { (
     echo "Status: ${my_task_status}"
 
     if test "${my_task_status}" = "running"; then
-        if test "${my_check_count}" -ge 20; then
-            echo "Error: tried 20 times"
+        if test "${my_check_count}" -ge 30; then
+            echo "Error: tried 30 times"
             return 1
         fi
 
