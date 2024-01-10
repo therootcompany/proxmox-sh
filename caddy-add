@@ -13,7 +13,7 @@ fi
 # CADDY_SRV
 
 fn_get_config() { (
-    curl -fsS --proto '=https' --tlsv1.2 \
+    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
         -u "${CADDY_USER}:${CADDY_PASS}" \
         "${CADDY_HOST}/config/" | jq
 ); }
@@ -22,7 +22,7 @@ fn_add_tls_policy() { (
     my_lxc_id="${1:-}"
     my_lxc_domain="${2:-}"
 
-    curl -fsS --proto '=https' --tlsv1.2 \
+    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
         -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
         "${CADDY_HOST}/config/apps/tls/automation/policies/..." \
@@ -39,7 +39,7 @@ fn_add_tls_policy_dns() { (
     my_lxc_id="${1:-}"
     my_lxc_domain="${2:-}"
 
-    curl -fsS --proto '=https' --tlsv1.2 \
+    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
         -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
         "${CADDY_HOST}/config/apps/tls/automation/policies/..." \
@@ -74,7 +74,7 @@ fn_add_tls_automation() { (
     #my_lxc_id="${1:-}"
     my_lxc_domain="${2:-}"
 
-    curl -fsS --proto '=https' --tlsv1.2 \
+    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
         -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
         "${CADDY_HOST}/config/apps/tls/certificates/automate/..." \
@@ -87,7 +87,7 @@ fn_add_tls_routing() { (
     my_lxc_domain="${2:-}"
     my_lxc_ip="${3:-}"
 
-    curl -fsS --proto '=https' --tlsv1.2 \
+    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
         -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
         "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/listener_wrappers/0/routes/0/handle/..." \
@@ -133,7 +133,7 @@ fn_add_http_handler() { (
     my_lxc_ip="${3:-}"
     my_http_port="${4:-}"
 
-    curl -fsS --proto '=https' --tlsv1.2 \
+    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
         -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
         "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/routes/..." \
@@ -181,7 +181,7 @@ fn_add_reverse_proxy_tls() { (
     #       "Host": [ "{http.reverse_proxy.upstream.hostport}" ]
     #   } }
     # },
-    curl -fsS --proto '=https' --tlsv1.2 \
+    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
         -u "${CADDY_USER}:${CADDY_PASS}" \
         -X POST \
         "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/routes/..." \
