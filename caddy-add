@@ -98,30 +98,30 @@ fn_add_tls_routing() { (
           "handler": "subroute",
           "routes": [
             {
+              "match": [ { "tls": { "sni": [ "'"${my_lxc_domain}"'" ] } } ],
               "handle": [
                 {
-                  "connection_policies": [ { "alpn": [ "http/1.1" ] } ],
-                  "handler": "tls"
+                  "handler": "tls",
+                  "connection_policies": [ { "alpn": [ "http/1.1" ] } ]
                 },
                 {
                   "handler": "subroute",
                   "routes": [
                     {
+                      "match": [ { "ssh": {} } ],
                       "handle": [
                         { "handler": "proxy", "upstreams": [ {
 
-                            "@id": "'"${my_lxc_id}"'_tls_proxy_ip",
+                            "@id": "'"${my_lxc_id}"'_tls_proxy_ssh",
                             "dial": [ "'"${my_lxc_ip}:22"'" ] } ] }
-                      ],
-                      "match": [ { "ssh": {} } ]
+                      ]
                     },
                     {
                       "match": [ { "http": [ { "host": [ "'"${my_lxc_domain}"'" ] } ] } ]
                     }
                   ]
                 }
-              ],
-              "match": [ { "tls": { "sni": [ "'"${my_lxc_domain}"'" ] } } ]
+              ]
             }
           ]
         }]'
@@ -141,6 +141,8 @@ fn_add_http_handler() { (
         --data-binary '
         [{
           "@id": "'"${my_lxc_id}"'_http_routing",
+          "match": [ { "host": [ "'"${my_lxc_domain}"'" ] } ],
+          "terminal": true,
           "handle": [
             {
               "handler": "subroute",
@@ -162,9 +164,7 @@ fn_add_http_handler() { (
                 }
               ]
             }
-          ],
-          "match": [ { "host": [ "'"${my_lxc_domain}"'" ] } ],
-          "terminal": true
+          ]
         }]
         '
 ); }
@@ -239,7 +239,7 @@ main() { (
 
         echo ""
         echo "USAGE"
-        echo "    caddy-add ct<id> <domain> <internal-ip> [proxy-port=80] [https]"
+        echo "    caddy-add ct<id> <domain> <internal-ip> [proxy-port=3080] [https]"
         echo ""
         echo "EXAMPLES"
         echo "    caddy-add  pve1   pve1.example.com 192.168.0.103 8006 https"
