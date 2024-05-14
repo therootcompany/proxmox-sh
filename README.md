@@ -27,12 +27,12 @@ Just some scripts for playing around with Proxmox
 
         ```sh
         USAGE
-            caddy-add ct<id> <domain> <internal-ip> [proxy-port=80] [https]
+            caddy-add <internal-ip> <domain> [--to-port=80] [--tls]
 
         EXAMPLES
-            caddy-add  pve1   pve1.example.com 192.168.0.103 8006 https
-            caddy-add ct103 lxc103.example.com 192.168.0.103 80
-            caddy-add ct103 lxc103.example.com 192.168.0.103
+            caddy-add 192.168.0.103 pve1.example.com --to-port 8006 --tls
+            caddy-add 192.168.0.103 lxc103.example.com --to-port 80
+            caddy-add 192.168.0.103 lxc103.example.com
 
         IMPORTANT
             BAD:  caddy run --config ./caddy.json # Will NOT persist!

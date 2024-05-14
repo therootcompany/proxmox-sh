@@ -131,7 +131,7 @@ fn_add_http_handler() { (
     my_lxc_id="${1:-}"
     my_lxc_domain="${2:-}"
     my_lxc_ip="${3:-}"
-    my_http_port="${4:-}"
+    my_tcp_port="${4:-}"
 
     curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
         -u "${CADDY_USER}:${CADDY_PASS}" \
@@ -158,7 +158,7 @@ fn_add_http_handler() { (
                       },
                       "upstreams": [ {
                         "@id": "'"${my_lxc_id}"'_http_proxy_ip",
-                        "dial": "'"${my_lxc_ip}:${my_http_port}"'" } ]
+                        "dial": "'"${my_lxc_ip}:${my_tcp_port}"'" } ]
                     }
                   ]
                 }
@@ -173,7 +173,7 @@ fn_add_reverse_proxy_tls() { (
     my_lxc_id="${1:-}"
     my_lxc_domain="${2:-}"
     my_lxc_ip="${3:-}"
-    my_http_port="${4:-}"
+    my_tcp_port="${4:-}"
 
     # handle: [ { handler: "reverse_proxy", ... }]
     # "headers": {
@@ -210,7 +210,7 @@ fn_add_reverse_proxy_tls() { (
                       },
                       "upstreams": [ {
                         "@id": "'"${my_lxc_id}"'_https_proxy_ip",
-                        "dial": "'"${my_lxc_ip}:${my_http_port}"'" } ]
+                        "dial": "'"${my_lxc_ip}:${my_tcp_port}"'" } ]
                     }
                   ]
                 }
@@ -223,36 +223,90 @@ fn_add_reverse_proxy_tls() { (
         '
 ); }
 
+fn_help() { (
+    echo ""
+    echo "USAGE"
+    echo "    caddy-add <internal-ip> <domain> [--to-port=3080] [--tls]"
+    echo ""
+    echo "EXAMPLES"
+    echo "    caddy-add 192.168.0.103 pve1.example.com --to-port 8006 --tls"
+    echo "    caddy-add 192.168.0.103 lxc103.example.com --to-port 80"
+    echo "    caddy-add 192.168.0.103 lxc103.example.com"
+    echo ""
+    echo "IMPORTANT"
+    echo "    BAD:  caddy run --config ./caddy.json # Will NOT persist!"
+    echo "    GOOD: caddy run --resume"
+    echo ""
+); }
+
 main() { (
     #fn_get_config
-    #exit 1
+    #return 1
 
-    my_lxc_id="${1:-}"
-    my_lxc_domain="${2:-}"
-    my_lxc_ip="${3:-}"
-    my_http_port="${4:-}"
-    my_https="${5:-}"
+    my_lxc_ip=""
+    my_lxc_domain=""
 
-    if test -z "${my_lxc_id}" ||
-        test -z "${my_lxc_domain}" ||
+    my_tcp_port="3080"
+    my_tls=""
+    while test -n "${1:-}"; do
+        b_arg="${1:-}"
+        shift
+
+        case "${b_arg}" in
+            help | --help)
+                fn_help
+                return 0
+                ;;
+            --tls)
+                my_tls="tls"
+                ;;
+            --to-port)
+                if test -z "${1:-}"; then
+                    fn_help
+                    return 1
+                fi
+                my_tcp_port="${1}"
+                shift
+                ;;
+            --*)
+                {
+                    echo ""
+                    echo "unknown flag '${b_arg}'"
+                    echo ""
+                } >&2
+                fn_help
+                return 1
+                ;;
+            *)
+                if test -z "${my_lxc_ip}"; then
+                    my_lxc_ip="${b_arg}"
+                    continue
+                fi
+
+                if test -z "${my_lxc_domain}"; then
+                    my_lxc_domain="${b_arg}"
+                    continue
+                fi
+
+                {
+                    echo ""
+                    echo "unknown argument '${b_arg}'"
+                    echo ""
+                } >&2
+                fn_help
+                return 1
+                ;;
+        esac
+    done
+
+    if test -z "${my_lxc_domain}" ||
         test -z "${my_lxc_ip}"; then
 
-        echo ""
-        echo "USAGE"
-        echo "    caddy-add ct<id> <domain> <internal-ip> [proxy-port=3080] [https]"
-        echo ""
-        echo "EXAMPLES"
-        echo "    caddy-add  pve1   pve1.example.com 192.168.0.103 8006 https"
-        echo "    caddy-add ct103 lxc103.example.com 192.168.0.103 80"
-        echo "    caddy-add ct103 lxc103.example.com 192.168.0.103"
-        echo ""
-        echo "IMPORTANT"
-        echo "    BAD:  caddy run --config ./caddy.json # Will NOT persist!"
-        echo "    GOOD: caddy run --resume"
-        echo ""
-
-        exit 1
+        fn_help
+        return 1
     fi
+
+    my_lxc_id="$(echo "${my_lxc_domain:-}" | sed 's;\.;_;g')"
 
     echo "Adding TLS Policy (\"@id\": \"${my_lxc_id}_tls_policy\")..."
     fn_add_tls_policy "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
@@ -264,25 +318,18 @@ main() { (
     echo "Enabling TLS SNI Routing to SSH:${my_lxc_domain}:22 (\"@id\": \"${my_lxc_id}_tls_routing\")..."
     fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
-    if test "https" = "${my_https}"; then
+    if test -n "${my_tls}"; then
 
         # FOR EXTERNAL NETWORK DEVICES / HTTPS CONTAINERS
-        echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-        fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
-
-    elif test -z "${my_https}"; then
-
-        # FOR INTERNAL CONTAINERS
-        echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_http_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-        fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_http_port}"
+        echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
+        fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
 
     else
 
-        echo "unknown option '${my_https}'"
-        exit 1
-
+        # FOR INTERNAL CONTAINERS
+        echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
+        fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
     fi
-
 ); }
 
 main "${@:-}"
