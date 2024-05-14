@@ -330,6 +330,23 @@ main() { (
         echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
         fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
     fi
+
+    fn_show_ssh_config "${my_lxc_ip}" "${my_lxc_domain}"
+); }
+
+fn_show_ssh_config() { (
+    my_lxc_ip="${1}"
+    my_lxc_domain="${2}"
+    my_lxc_sub="$(echo "${my_lxc_domain}" | cut -d'.' -f1)"
+
+    echo ""
+    echo "TO FINISH: manually update ~/.ssh/config:"
+    echo ""
+    echo "echo 'Host ${my_lxc_sub} ${my_lxc_domain}"
+    echo "    #Hostname ${my_lxc_ip}"
+    echo "    Hostname ${my_lxc_domain}"
+    echo '    ProxyCommand sclient --alpn ssh %h'"' >> ~/.ssh/config"
+    echo ""
 ); }
 
 main "${@:-}"
