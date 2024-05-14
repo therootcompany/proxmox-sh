@@ -15,10 +15,10 @@ if test -e ~/.config/proxmox/current.env; then
     . ~/.config/proxmox/current.env || true
 fi
 
-if test -z "${PROXMOX_HOST-}" ||
-    test -z "${PROXMOX_TOKEN_ID-}" ||
-    test -z "${PROXMOX_TOKEN_SECRET-}" ||
-    test -z "${PROXMOX_TARGET_NODE-}"; then
+if test -z "${PROXMOX_HOST:-}" ||
+    test -z "${PROXMOX_TOKEN_ID:-}" ||
+    test -z "${PROXMOX_TOKEN_SECRET:-}" ||
+    test -z "${PROXMOX_TARGET_NODE:-}"; then
 
     {
         # shellcheck disable=2088
@@ -403,4 +403,4 @@ main() { (
     fn_wait_status "${my_task_id}"
 ); }
 
-main "${@-}"
+main "${@:-}"
