@@ -81,28 +81,26 @@ fn_resources_next_index() { (
         ${my_curl} -H "${my_auth}" \
             "${my_base_url}/cluster/resources"
     )"
+
     my_resource_ids="$(
         echo "${my_resources}" |
             jq -r '.data[].vmid' |
-            grep "^${my_prefix}" ||
-            echo "${my_prefix}${my_zero}"
+            grep "^${my_prefix}"
     )"
+    if test -z "${my_resource_ids}"; then
+        my_resource_ids="${my_prefix}${my_zero}"
+    fi
     my_resource_last_id="$(
         echo "${my_resource_ids}" |
             sort -u |
             tail -n 1
     )"
 
-    # Goal: 1101001 => 002
+    # Goal: 1101001 => 2
     # 0. 1101001 => 1
     my_resource_index="$((my_resource_last_id % 1000))"
-    # 2. 1 => 9002
-    # it's OVER 9000!! (just to keep leading 0s in the string)
-    my_resource_index="$((my_resource_index + 9001))"
-    # 3. 9002 => 002
-    my_resource_index="$(
-        echo "${my_resource_index}" | cut -c"2-"
-    )"
+    # 1. 1 => 2
+    my_resource_index="$((my_resource_index + 1))"
 
     echo "${my_resource_index}"
 ); }
@@ -154,7 +152,11 @@ fn_create_lxc() { (
     # https://192.168.0.3:8006/api2/json/nodes/pve1/lxc
 
     my_vlan="${1}"
-    my_unit="${2}"
+    my_num="${2}"
+    # 1 => 1001
+    my_3digit="$((my_num + 1000))"
+    # 1001 => 001
+    my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
     my_hostname="${3}"
     my_pubkeys="${4}"
 
@@ -191,14 +193,14 @@ fn_create_lxc() { (
     my_mp0_mnt='/mnt/storage'
     my_mp0_opts='lazytime;nodev;nosuid'
     my_net="$(
-        fn_id_to_net "${my_vlan}" "${my_unit}"
+        fn_id_to_net "${my_vlan}" "${my_num}"
     )"
 
     my_task_result="$(
         ${my_curl} -H "${my_auth}" \
             -X POST "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" \
             --data-urlencode "start=1" \
-            --data-urlencode "vmid=${my_vlan}${my_unit}" \
+            --data-urlencode "vmid=${my_vlan}${my_3digit}" \
             --data-urlencode "hostname=${my_hostname}" \
             --data-urlencode "unprivileged=1" \
             --data-urlencode "password=${my_password}" \
@@ -242,36 +244,38 @@ fn_create_lxc() { (
 fn_id_to_net() { (
     # assumed to be always 4-digits (1101-1199)
     my_vlan="${1}"
-    # assumed to be always 3-digits (101-199)
-    my_unit="${2}"
+    # assumed to be less than 4-digits (1-154)
+    my_num="${2}"
 
-    # make 4 digits (to avoid 008 being octal)
-    my_num="1${my_unit}"
-    # remove leading "1"
-    my_num="$((my_num - 1000))"
+    # 1101 => '11' '01'
+    my_vlan_012="$(echo "${my_vlan}" | cut -c'1-2')"
+    my_vlan_034="$(echo "${my_vlan}" | cut -c'3-4')"
 
+    # 1101 => '11' '1'
+    my_vlan_12="$((my_vlan_012 + 0))"
+    my_vlan_34="$((my_vlan_034 + 0))"
+
+    # 1 => 0001
+    # 154 => 0154
+    my_3digit="$((my_num + 1000))"
+    my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
+    my_4digit="0${my_3digit}"
+
+    # 0001 => '00' '01'
+    # 0154 => '01' '54'
+    my_unit_12="$(echo "${my_4digit}" | cut -c'1-2')"
+    my_unit_34="$(echo "${my_4digit}" | cut -c'3-4')"
+
+    # 1 => 101
+    # 154 => 254
     my_ip="$((my_num + 100))"
-    my_vlan_01="$(
-        echo "${my_vlan}" | cut -c-2
-    )"
-    my_vlan_02="$(
-        echo "${my_vlan}" | cut -c3-
-    )"
-    my_vlan_2="$((my_vlan_02 + 0))"
-
-    my_unit_01="$(
-        echo "0${my_unit}" | cut -c-2
-    )"
-    my_unit_02="$(
-        echo "0${my_unit}" | cut -c3-
-    )"
 
     printf "hwaddr=00:52:%s:%s:%s:%s," \
-        "${my_vlan_01}" "${my_vlan_02}" "${my_unit_01}" "${my_unit_02}"
+        "${my_vlan_012}" "${my_vlan_034}" "${my_unit_12}" "${my_unit_34}"
     printf "ip=10.%s.%s.%s/24," \
-        "${my_vlan_01}" "${my_vlan_2}" "${my_ip}"
+        "${my_vlan_12}" "${my_vlan_34}" "${my_ip}"
     printf "gw=10.%s.%s.1" \
-        "${my_vlan_01}" "${my_vlan_2}"
+        "${my_vlan_12}" "${my_vlan_34}"
 ); }
 
 fn_wait_status() { (
@@ -349,7 +353,7 @@ main() { (
             echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}/24"
         }
 
-        my_next_id=$((my_next_unit + 0))
+        my_next_id="${my_next_unit}"
         my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
         my_hostname="example${my_next_id}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
 
