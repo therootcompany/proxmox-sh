@@ -1,9 +1,41 @@
 # [proxmox-sh](https://github.com/therootcompany/proxmox-sh)
 
-Just some scripts for playing around with Proxmox
+Scripts to quickly deploy LXCs with Proxmox and expose them with Caddy.
 
--   [.env](./example.env)
--   [provision-lxc](./provision-lxc)
+# Table of Contents
+
+-   Install
+-   ENVs
+-   `proxmox-add` (to create an LXC)
+-   `caddy-add` (to expose LXC via TLS/HTTPS)
+-   Generate an API Token
+-   Grant Permissions to an API Token
+
+# Install
+
+```sh
+mkdir -p ~/.local/opt/
+git clone https://github.com/therootcompany/proxmox-sh.git ~/.local/opt/proxmox-sh
+
+echo 'export PATH="$HOME/.local/opt/proxmox-sh/bin:$PATH"' >> ~/.config/envman/PATH.env
+export PATH="$HOME/.local/opt/proxmox-sh/bin:$PATH"
+```
+
+# ENVs & Scripts
+
+-   [~/.config/proxmox-sh/current.env](./example.env)
+
+    ```sh
+    mkdir -p ~/.config/proxmox-sh/
+    chmod 0700 ~/.config/proxmox-sh/
+
+    cp -RPp ./example.env ~/.config/proxmox-sh/bnna.env
+    chmod 0600 ~/.config/proxmox-sh/bnna.env
+
+    env-switch 'proxmox-sh' 'bnna'
+    ```
+
+-   [~/.local/opt/proxmox-sh/bin/provision-lxc](./provision-lxc)
 
     ```sh
     USAGE
@@ -23,7 +55,7 @@ Just some scripts for playing around with Proxmox
             proxmox-create 192.168.0.100/24 example.com 'ssh-rsa AAAAB...xxxx me@example.local'
         ```
 
-    -   [caddy-add](./caddy-add)
+-   [~/.local/opt/proxmox-sh/bin/caddy-add](./caddy-add)
 
         ```sh
         USAGE

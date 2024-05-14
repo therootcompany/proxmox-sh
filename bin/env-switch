@@ -61,16 +61,16 @@ main() { (
         test "${my_config_dir}" = "--help"; then
 
         echo ""
-        echo "envs-switch - switch the 'default.env' for any directory in ~/.config/"
+        echo "env-switch - switch the 'current.env' for any directory in ~/.config/"
         echo ""
         echo "USAGE"
-        echo "        envs-switch <config-dir> [env-name]"
+        echo "        env-switch <config-dir> [env-name]"
         echo ""
         echo "EXAMPLES"
-        echo "        envs-switch proxmox"
-        echo "        envs-switch caddy"
-        echo "        envs-switch proxmox me"
-        echo "        envs-switch proxmox other"
+        echo "        env-switch 'proxmox-sh'"
+        echo "        env-switch 'caddy'"
+        echo "        env-switch 'proxmox-sh' 'profile-1'"
+        echo "        env-switch 'proxmox-sh' 'profile-2'"
         echo ""
 
         return 1
