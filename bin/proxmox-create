@@ -10,9 +10,9 @@ if test -e .env; then
     # shellcheck disable=SC1091
     . ./.env
 fi
-if test -e ~/.config/proxmox/current.env; then
+if test -e ~/.config/proxmox-sh/current.env; then
     # shellcheck disable=SC1090
-    . ~/.config/proxmox/current.env || true
+    . ~/.config/proxmox-sh/current.env || true
 fi
 
 if test -z "${PROXMOX_HOST:-}" ||
@@ -22,7 +22,7 @@ if test -z "${PROXMOX_HOST:-}" ||
 
     {
         # shellcheck disable=2088
-        echo "~/.config/proxmox/current.env should contain values like these:"
+        echo "~/.config/proxmox-sh/current.env should contain values like these:"
         echo "(./.env.secret or ./.env may also be used) "
         echo ""
         echo "    # Config"
