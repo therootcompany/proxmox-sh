@@ -17,5 +17,5 @@ fn_init_profile() { (
     fi
 ); }
 
-fn_init_profix 'proxmox-sh'
-fn_init_profix 'caddy-sh'
+fn_init_profile 'proxmox-sh'
+fn_init_profile 'caddy-sh'
