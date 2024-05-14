@@ -2,23 +2,23 @@
 set -e
 set -u
 
-if test -e ~/.config/caddy/default.env; then
+if test -e ~/.config/caddy-sh/default.env; then
     # shellcheck disable=SC1090
-    . ~/.config/caddy/default.env
+    . ~/.config/caddy-sh/default.env
 fi
 
 if test -z "${CADDY_USER:-}" ||
     test -z "${CADDY_BCRYPT:-}"; then
     echo ""
-    echo "Run 'caddy hash-password' and place the values in '~/.config/caddy/env'"
+    echo "Run 'caddy hash-password' and place the values in '~/.config/caddy-sh/env'"
 
     echo "
-    # In the SERVER's ~/.config/caddy/env:
+    # In the SERVER's ~/.config/caddy-sh/env:
     # (note the DOUBLE quotes, due to https://github.com/caddyserver/caddy/pull/5437)
     CADDY_USER=\"my-user\"
     CADDY_BCRYPT=\"the-result-of-caddy-hashpassword\"
 
-    # In your LOCAL ~/.config/caddy/env:
+    # In your LOCAL ~/.config/caddy-sh/env:
     # (note the SINGLE quotes, for shell)
     CADDY_USER='my-user'
     CADDY_PASS='my-pass'
@@ -289,8 +289,8 @@ main() { (
         echo "    caddy-admin-init 192.168.1.100 caddy.example.com"
         echo ""
         echo "IMPORTANT:"
-        echo "    BAD:  caddy run --envfile ~/.config/caddy/env --config ./caddy.json"
-        echo "    GOOD: caddy run --envfile ~/.config/caddy/env --resume"
+        echo "    BAD:  caddy run --envfile ~/.config/caddy-sh/env --config ./caddy.json"
+        echo "    GOOD: caddy run --envfile ~/.config/caddy-sh/env --resume"
         echo ""
         echo "Changes do NOT persist by default!"
         echo ""

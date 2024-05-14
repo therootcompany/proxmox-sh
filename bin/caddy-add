@@ -2,9 +2,9 @@
 set -e
 set -u
 
-if test -e ~/.config/caddy/current.env; then
+if test -e ~/.config/caddy-sh/current.env; then
     # shellcheck disable=SC1090
-    . ~/.config/caddy/current.env
+    . ~/.config/caddy-sh/current.env
 fi
 
 # CADDY_HOST

@@ -2,16 +2,16 @@
 set -e
 set -u
 
-if test -e ~/.config/caddy/default.env; then
+if test -e ~/.config/caddy-sh/default.env; then
     # shellcheck disable=SC1090
-    . ~/.config/caddy/default.env
+    . ~/.config/caddy-sh/default.env
 fi
 
 if test -z "${CADDY_HOST:-}" ||
     test -z "${CADDY_USER:-}" ||
     test -z "${CADDY_PASS:-}"; then
     echo ""
-    echo "Error: Set CADDY_HOST, CADDY_USER, and CADDY_PASS in '~/.config/caddy/env'"
+    echo "Error: Set CADDY_HOST, CADDY_USER, and CADDY_PASS in '~/.config/caddy-sh/env'"
     echo ""
     exit 1
 fi
@@ -35,8 +35,8 @@ main() { (
         echo "    caddy-config-get"
         echo ""
         echo "IMPORTANT:"
-        echo "    BAD:  caddy run --envfile ~/.config/caddy/env --config ./caddy.json"
-        echo "    GOOD: caddy run --envfile ~/.config/caddy/env --resume"
+        echo "    BAD:  caddy run --envfile ~/.config/caddy-sh/env --config ./caddy.json"
+        echo "    GOOD: caddy run --envfile ~/.config/caddy-sh/env --resume"
         echo ""
         echo "Changes do NOT persist by default!"
         echo ""
