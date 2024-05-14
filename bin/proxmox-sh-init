@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+set -u
+
+fn_init_profile() { (
+    my_product="${1:-}"
+
+    mkdir -p ~/.config/"${my_product}"/
+    chmod 0700 ~/.config/"${my_product}"/
+    if ! test -e ~/.config/"${my_product}"/example.env; then
+        cp -RPp ~/.local/opt/"${my_product}"/example."${my_product}".env \
+            ~/.config/"${my_product}"/example.env
+    fi
+    chmod 0600 ~/.config/"${my_product}"/example.env
+    if ! test -e ~/.config/"${my_product}"/current.env; then
+        ~/.local/opt/"${my_product}"/env-switch "${my_product}" 'example'
+    fi
+); }
+
+fn_init_profix 'proxmox-sh'
+fn_init_profix 'caddy-sh'
