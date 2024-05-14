@@ -317,7 +317,6 @@ main() { (
     my_hostname="${2:-}"
     my_pubkeys="${3:-}"
 
-    my_pubkeys="${4:-}"
     if test -z "${my_pubkeys}"; then
         my_pubkeys="${PROXMOX_AUTHORIZED_KEYS:-}"
     fi
