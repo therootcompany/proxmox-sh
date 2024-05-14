@@ -13,7 +13,7 @@ fn_init_profile() { (
     fi
     chmod 0600 ~/.config/"${my_product}"/example.env
     if ! test -e ~/.config/"${my_product}"/current.env; then
-        ~/.local/opt/proxmox-sh/env-switch "${my_product}" 'example'
+        ~/.local/opt/proxmox-sh/bin/env-switch "${my_product}" 'example'
     fi
 ); }
 
