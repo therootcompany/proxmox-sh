@@ -10,6 +10,7 @@ Scripts to quickly deploy LXCs with Proxmox and expose them with Caddy.
 -   `caddy-add` (to expose LXC via TLS/HTTPS)
 -   Generate an API Token
 -   Grant Permissions to an API Token
+-   Beta scripts
 
 # Install
 
@@ -35,25 +36,15 @@ export PATH="$HOME/.local/opt/proxmox-sh/bin:$PATH"
     env-switch 'proxmox-sh' 'bnna'
     ```
 
--   [~/.local/opt/proxmox-sh/bin/provision-lxc](./provision-lxc)
+-   [~/.local/opt/proxmox-sh/bin/proxmox-create](./proxmox-create)
 
     ```sh
     USAGE
-        provision-lxc <hostname> [ssh-pubkey-or-file-or-url]
+        proxmox-create <cidr> <hostname> [ssh-pubkey]
 
     EXAMPLE
-        provision-lxc demo.example.com 'https://example.com/authorized_keys'
+        proxmox-create 192.168.0.100/24 example.com 'ssh-rsa AAAAB...xxxx me@example.local'
     ```
-
-    -   [proxmox-create](./proxmox-create)
-
-        ```sh
-        USAGE
-            proxmox-create <cidr> <hostname> [ssh-pubkey]
-
-        EXAMPLE
-            proxmox-create 192.168.0.100/24 example.com 'ssh-rsa AAAAB...xxxx me@example.local'
-        ```
 
 -   [~/.local/opt/proxmox-sh/bin/caddy-add](./caddy-add)
 
@@ -82,3 +73,15 @@ Note: `Privilege Separation` means that the API token must have its own permissi
 Datacenter => Permissions
 
 Visually, the _Permissions_ link looks like a folder for a menu, but it's actually its own page.
+
+# Beta Scripts
+
+-   [provision-lxc](./provision-lxc)
+
+    ```sh
+    USAGE
+        provision-lxc <hostname> [ssh-pubkey-or-file-or-url]
+
+    EXAMPLE
+        provision-lxc demo.example.com 'https://example.com/authorized_keys'
+    ```
