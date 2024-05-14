@@ -2,14 +2,6 @@
 set -e
 set -u
 
-if test -e .env.secret; then
-    # shellcheck disable=SC1091
-    . ./.env.secret || true
-fi
-if test -e .env; then
-    # shellcheck disable=SC1091
-    . ./.env
-fi
 if test -e ~/.config/proxmox-sh/current.env; then
     # shellcheck disable=SC1090
     . ~/.config/proxmox-sh/current.env || true
