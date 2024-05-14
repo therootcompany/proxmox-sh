@@ -20,6 +20,9 @@ git clone https://github.com/therootcompany/proxmox-sh.git ~/.local/opt/proxmox-
 
 echo 'export PATH="$HOME/.local/opt/proxmox-sh/bin:$PATH"' >> ~/.config/envman/PATH.env
 export PATH="$HOME/.local/opt/proxmox-sh/bin:$PATH"
+
+mkdir -p ~/.config/proxmox-sh/
+chmod 0700 ~/.config/proxmox-sh/
 ```
 
 # ENVs & Scripts
@@ -27,9 +30,6 @@ export PATH="$HOME/.local/opt/proxmox-sh/bin:$PATH"
 -   [~/.config/proxmox-sh/current.env](./example.env)
 
     ```sh
-    mkdir -p ~/.config/proxmox-sh/
-    chmod 0700 ~/.config/proxmox-sh/
-
     cp -RPp ./example.env ~/.config/proxmox-sh/bnna.env
     chmod 0600 ~/.config/proxmox-sh/bnna.env
 
@@ -40,10 +40,15 @@ export PATH="$HOME/.local/opt/proxmox-sh/bin:$PATH"
 
     ```sh
     USAGE
-        proxmox-create <cidr> <hostname> [ssh-pubkey]
+        proxmox-create <hostname> [ssh-pubkey-file-url-or-string]
 
     EXAMPLE
-        proxmox-create 192.168.0.100/24 example.com 'ssh-rsa AAAAB...xxxx me@example.local'
+        proxmox-create 'example1.1101.c.bnna.net' ~/.ssh/id_rsa.pub
+
+    DEFAULT SSH KEYS (only key comments are shown, for brevity)
+        johndoe@macbook.local
+        johndoe@macpro.local
+        backuper@devops.com
     ```
 
 -   [~/.local/opt/proxmox-sh/bin/caddy-add](./caddy-add)

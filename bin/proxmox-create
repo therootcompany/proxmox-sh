@@ -10,19 +10,23 @@ fi
 if test -z "${PROXMOX_HOST:-}" ||
     test -z "${PROXMOX_TOKEN_ID:-}" ||
     test -z "${PROXMOX_TOKEN_SECRET:-}" ||
-    test -z "${PROXMOX_TARGET_NODE:-}"; then
+    test -z "${PROXMOX_TARGET_NODE:-}" ||
+    test -z "${PROXMOX_TARGET_VLAN:-}"; then
 
     {
         # shellcheck disable=2088
         echo "~/.config/proxmox-sh/current.env should contain values like these:"
         echo "(./.env.secret or ./.env may also be used) "
         echo ""
-        echo "    # Config"
+        echo "    # PVE Config"
         echo "    PROXMOX_HOST='pve1.example.net:8006'"
-        echo "    PROXMOX_TARGET_NODE='pve1'"
         echo "    PROXMOX_BRIDGE='vmbr0'"
         echo "    PROXMOX_SEARCH_SUFFIX='.localdomain'"
         echo "    PROXMOX_NAMESERVER='172.17.0.1'"
+        echo ""
+        echo "    # Deploy Config"
+        echo "    PROXMOX_TARGET_NODE='pve1'"
+        echo "    PROXMOX_TARGET_VLAN='1100'"
         echo ""
         echo "    # URL, File or String"
         echo "    PROXMOX_AUTHORIZED_KEYS='https://github.com/me.keys'"
@@ -313,9 +317,8 @@ fn_wait_status() { (
 # https://192.168.0.3:8006/api2/json/nodes/pve1/network?type=any_bridge
 
 main() { (
-    my_vlan="${1:-}"
-    my_hostname="${2:-}"
-    my_pubkeys="${3:-}"
+    my_hostname="${1:-}"
+    my_pubkeys="${2:-}"
 
     if test -z "${my_pubkeys}"; then
         my_pubkeys="${PROXMOX_AUTHORIZED_KEYS:-}"
@@ -325,45 +328,37 @@ main() { (
         fn_ssh_keys "${my_pubkeys}"
     )"
 
-    if test -z "${my_vlan:-}" ||
-        test -z "${my_hostname:-}"; then
-
-        if test -n "${my_vlan}"; then
+    if test -z "${my_hostname:-}"; then
+        {
             echo ""
-            printf "Finding next available IP for vlan${my_vlan}...\n"
+            printf "Finding next available IP for vlan%s...\n" "${PROXMOX_TARGET_VLAN}"
             my_vlan_1="$(
-                echo "${my_vlan}" | cut -c-2
+                echo "${PROXMOX_TARGET_VLAN}" | cut -c-2
             )"
             my_vlan_1=$((my_vlan_1 + 0))
 
             my_vlan_2="$(
-                echo "${my_vlan}" | cut -c3-
+                echo "${PROXMOX_TARGET_VLAN}" | cut -c3-
             )"
             my_vlan_2=$((my_vlan_2 + 0))
 
             my_next_unit="$(
-                fn_resources_next_index "${my_vlan}"
+                fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
             )"
             my_next_ip="$((my_next_unit + 100))"
             echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}/24"
-        else
-            my_vlan="1101"
-            my_vlan_1="11"
-            my_vlan_2="1"
-            my_next_unit="001"
-            my_next_ip="101"
-        fi
+        }
 
         my_next_id=$((my_next_unit + 0))
         my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
-        my_hostname="example${my_next_id}.${my_vlan}${my_domain_suffix}"
+        my_hostname="example${my_next_id}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
 
         echo ""
         echo "USAGE"
-        echo "    proxmox-create <vlan> <hostname> [ssh-pubkey-file-url-or-string]"
+        echo "    proxmox-create <hostname> [ssh-pubkey-file-url-or-string]"
         echo ""
         echo "EXAMPLE"
-        echo "    proxmox-create ${my_vlan} ${my_hostname} ~/.ssh/id_rsa.pub"
+        echo "    proxmox-create '${my_hostname}' ~/.ssh/id_rsa.pub"
         echo ""
         echo "DEFAULT SSH KEYS (only key comments are shown, for brevity)"
         printf '%s' "${my_pubkeys}" |
@@ -376,19 +371,19 @@ main() { (
         exit 1
     fi
 
-    printf "Finding next available id for VLAN %s... " "${my_vlan}"
+    printf "Finding next available id for VLAN %s... " "${PROXMOX_TARGET_VLAN}"
     my_next_unit="$(
-        fn_resources_next_index "${my_vlan}"
+        fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
     )"
     echo "${my_next_unit}"
 
     my_net="$(
-        fn_id_to_net "${my_vlan}" "${my_next_unit}"
+        fn_id_to_net "${PROXMOX_TARGET_VLAN}" "${my_next_unit}"
     )"
     echo "${my_net}" | tr ',' '\n    '
 
     my_task_id="$(
-        fn_create_lxc "${my_vlan}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}"
+        fn_create_lxc "${PROXMOX_TARGET_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}"
     )"
     echo "Waiting for ${my_task_id}..."
     fn_wait_status "${my_task_id}"
