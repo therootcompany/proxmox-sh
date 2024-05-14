@@ -8,12 +8,12 @@ fn_init_profile() { (
     mkdir -p ~/.config/"${my_product}"/
     chmod 0700 ~/.config/"${my_product}"/
     if ! test -e ~/.config/"${my_product}"/example.env; then
-        cp -RPp ~/.local/opt/"${my_product}"/example."${my_product}".env \
+        cp -RPp ~/.local/opt/proxmox-sh/example."${my_product}".env \
             ~/.config/"${my_product}"/example.env
     fi
     chmod 0600 ~/.config/"${my_product}"/example.env
     if ! test -e ~/.config/"${my_product}"/current.env; then
-        ~/.local/opt/"${my_product}"/env-switch "${my_product}" 'example'
+        ~/.local/opt/proxmox-sh/env-switch "${my_product}" 'example'
     fi
 ); }
 
