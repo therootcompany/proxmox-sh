@@ -68,7 +68,7 @@ main() { (
         echo ""
         echo "EXAMPLES"
         echo "        env-switch 'proxmox-sh'"
-        echo "        env-switch 'caddy'"
+        echo "        env-switch 'caddy-sh'"
         echo "        env-switch 'proxmox-sh' 'profile-1'"
         echo "        env-switch 'proxmox-sh' 'profile-2'"
         echo ""
