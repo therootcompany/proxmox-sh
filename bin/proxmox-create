@@ -10,6 +10,7 @@ fi
 if test -z "${PROXMOX_HOST:-}" ||
     test -z "${PROXMOX_TOKEN_ID:-}" ||
     test -z "${PROXMOX_TOKEN_SECRET:-}" ||
+    test -z "${PROXMOX_SEARCH_SUFFIX:-}" ||
     test -z "${PROXMOX_TARGET_NODE:-}" ||
     test -z "${PROXMOX_TARGET_VLAN:-}"; then
 
@@ -153,12 +154,19 @@ fn_create_lxc() { (
 
     my_vlan="${1}"
     my_num="${2}"
+    my_hostname="${3}"
+    my_pubkeys="${4}"
+
+    my_os_tmpl="${5}"
+    my_memory="${6}"
+    my_mp0_size="${7}"
+    my_cores="${8}"
+    my_cpulimit="${9}"
+
     # 1 => 1001
     my_3digit="$((my_num + 1000))"
     # 1001 => 001
     my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
-    my_hostname="${3}"
-    my_pubkeys="${4}"
 
     my_password="$(
         xxd -l12 -ps /dev/urandom |
@@ -172,18 +180,6 @@ fn_create_lxc() { (
     my_search_suffix="${PROXMOX_SEARCH_SUFFIX:-}"
     my_nameserver="${PROXMOX_NAMESERVER:-}"
     my_bridge="${PROXMOX_BRIDGE:-vmbr0}"
-
-    my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
-    my_cores=2
-    my_cpulimit=60
-    my_memory=1024
-    my_mp0_size='0.1'
-
-    # my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
-    # my_cores=4
-    # my_cpulimit=100
-    # my_memory=4096
-    # my_mp0_size='100'
 
     my_tmpl_vol=cephfs0
     my_fs_size=8
@@ -268,12 +264,12 @@ fn_id_to_net() { (
 
     # 1 => 101
     # 154 => 254
-    my_ip="$((my_num + 100))"
+    my_ip_suffix="$((my_num + 100))"
 
     printf "hwaddr=00:52:%s:%s:%s:%s," \
         "${my_vlan_012}" "${my_vlan_034}" "${my_unit_12}" "${my_unit_34}"
     printf "ip=10.%s.%s.%s/24," \
-        "${my_vlan_12}" "${my_vlan_34}" "${my_ip}"
+        "${my_vlan_12}" "${my_vlan_34}" "${my_ip_suffix}"
     printf "gw=10.%s.%s.1" \
         "${my_vlan_12}" "${my_vlan_34}"
 ); }
@@ -320,9 +316,136 @@ fn_wait_status() { (
 # https://192.168.0.3:8006/api2/json/nodes
 # https://192.168.0.3:8006/api2/json/nodes/pve1/network?type=any_bridge
 
-main() { (
-    my_hostname="${1:-}"
+fn_help() { (
+    my_hostname="${1:-example101}"
     my_pubkeys="${2:-}"
+
+    echo ""
+    echo "USAGE"
+    echo "    proxmox-create <hostname> [ssh-pubkey-file-url-or-string]"
+    echo ""
+    echo "EXAMPLE"
+    echo "    proxmox-create '${my_hostname}' ~/.ssh/id_rsa.pub"
+    echo ""
+    echo "OPTIONS"
+    echo "    --os 'alpine'    # alpine or ubuntu"
+    echo "    --vcpus 2        # 1-12 vCPU Cores"
+    echo "    --duty-cycle 60  # 1-100 %"
+    echo "    --ram 512        # 64-24576 MB"
+    echo "    --storage 1      # 1-100 GB"
+    echo ""
+
+    if test -n "${my_pubkeys}"; then
+        echo "DEFAULT SSH KEYS (only key comments are shown, for brevity)"
+        printf '%s' "${my_pubkeys}" |
+            cut -d' ' -f3 |
+            sort -u |
+            while read -r my_comment; do
+                echo "    ${my_comment}"
+            done
+        echo ""
+    fi
+); }
+
+main() { (
+    my_hostname=''
+    my_pubkeys=''
+    my_os='alpine'
+    my_vcpus='2'
+    my_ram='512'
+    my_storage='0.1'
+    my_duty_cycle='60'
+
+    while test -n "${1:-}"; do
+        b_arg="${1:-}"
+        shift
+
+        case "${b_arg}" in
+            help | --help)
+                fn_help >&2
+                return 0
+                ;;
+            --nesting)
+                echo "'--nesting' not supported yet" >&2
+                return 1
+                #my_nesting="nesting"
+                ;;
+            --os)
+                my_os="${1:-}"
+                case "${my_os}" in
+                    ubuntu) ;;
+                    alpine) ;;
+                    *)
+                        fn_help >&2
+                        return 1
+                        ;;
+                esac
+                shift
+                ;;
+            --vcpus)
+                my_vcpus="${1:-}"
+                if test "${my_vcpus}" -lt 1 ||
+                    test "${my_vcpus}" -gt 12; then
+                    fn_help >&2
+                    return 1
+                fi
+                shift
+                ;;
+            --duty-cycle)
+                my_duty_cycle="${1:-}"
+                if test "${my_duty_cycle}" -lt 1 ||
+                    test "${my_duty_cycle}" -gt 12; then
+                    fn_help >&2
+                    return 1
+                fi
+                shift
+                ;;
+            --ram)
+                my_ram="${1:-}"
+                if test "${my_ram}" -lt 32 ||
+                    test "${my_ram}" -gt 24576; then
+                    fn_help >&2
+                    return 1
+                fi
+                shift
+                ;;
+            --storage)
+                my_storage="${1:-}"
+                if test "${my_storage}" -lt 1 ||
+                    test "${my_storage}" -gt 100; then
+                    fn_help >&2
+                    return 1
+                fi
+                shift
+                ;;
+            --*)
+                {
+                    echo ""
+                    echo "unknown flag '${b_arg}'"
+                    echo ""
+                } >&2
+                fn_help >&2
+                return 1
+                ;;
+            *)
+                if test -z "${my_hostname}"; then
+                    my_hostname="${b_arg}"
+                    continue
+                fi
+                if test -z "${my_pubkeys}"; then
+                    my_pubkeys="${b_arg}"
+                    continue
+                fi
+                {
+                    echo ""
+                    echo "unknown argument '${b_arg}'"
+                    echo ""
+                } >&2
+                fn_help >&2
+                return 1
+                ;;
+        esac
+    done
 
     if test -z "${my_pubkeys}"; then
         my_pubkeys="${PROXMOX_AUTHORIZED_KEYS:-}"
@@ -350,47 +473,67 @@ main() { (
                 fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
             )"
             my_next_ip="$((my_next_unit + 100))"
-            echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}/24"
-        }
+            echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}"
+            echo "    255.255.255.0 (/24)"
+        } >&2
 
         my_next_id="${my_next_unit}"
         my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
-        my_hostname="example${my_next_id}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
+        my_hostname="lxc-${my_next_id}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
 
-        echo ""
-        echo "USAGE"
-        echo "    proxmox-create <hostname> [ssh-pubkey-file-url-or-string]"
-        echo ""
-        echo "EXAMPLE"
-        echo "    proxmox-create '${my_hostname}' ~/.ssh/id_rsa.pub"
-        echo ""
-        echo "DEFAULT SSH KEYS (only key comments are shown, for brevity)"
-        printf '%s' "${my_pubkeys}" |
-            cut -d' ' -f3 |
-            sort -u |
-            while read -r my_comment; do
-                echo "    ${my_comment}"
-            done
-        echo ""
-        exit 1
+        fn_help "${my_hostname}" "${my_pubkeys}" >&2
+        return 1
+    fi
+    if echo "${my_hostname}" | grep -q -F '.'; then
+        echo "'hostname' should be the short form: i.e. 'foo', not 'foo.example.com'"
+        return 1
     fi
 
-    printf "Finding next available id for VLAN %s... " "${PROXMOX_TARGET_VLAN}"
+    printf "Finding next available id for VLAN %s... " "${PROXMOX_TARGET_VLAN}" >&2
     my_next_unit="$(
         fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
     )"
-    echo "${my_next_unit}"
+    echo "${my_next_unit}" >&2
 
     my_net="$(
         fn_id_to_net "${PROXMOX_TARGET_VLAN}" "${my_next_unit}"
     )"
-    echo "${my_net}" | tr ',' '\n    '
-
-    my_task_id="$(
-        fn_create_lxc "${PROXMOX_TARGET_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}"
+    my_ip="$(
+        echo "${my_net}" |
+            tr ',' '\n' |
+            grep 'ip=' |
+            cut -d'=' -f2 |
+            cut -d'/' -f1
     )"
-    echo "Waiting for ${my_task_id}..."
-    fn_wait_status "${my_task_id}"
+    my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
+    if test "ubuntu" = "${my_os}"; then
+        my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
+    fi
+
+    {
+        echo ""
+        echo "    OS:            ${my_os}"
+        echo "    RAM:           ${my_ram}MB"
+        echo "    /mnt/storage:  ${my_storage}GB"
+        echo "    vCPU:          ${my_vcpus} cores"
+        echo "                   ${my_duty_cycle}%"
+        echo ""
+    } >&2
+    my_task_id="$(
+        fn_create_lxc "${PROXMOX_TARGET_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_duty_cycle}"
+    )"
+    {
+        echo "Waiting for ${my_task_id}..."
+        fn_wait_status "${my_task_id}"
+        echo ""
+        echo "Next steps: add your public domain(s)"
+    } >&2
+    printf "    caddy-add " >&2
+    echo "${my_ip} ${my_hostname}.${PROXMOX_TARGET_VLAN}${PROXMOX_SEARCH_SUFFIX}"
+    {
+        echo "    caddy-add ${my_ip} CHANGE-ME.example.com"
+        echo ""
+    } >&2
 ); }
 
 main "${@:-}"
