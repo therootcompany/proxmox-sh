@@ -317,15 +317,14 @@ fn_wait_status() { (
 # https://192.168.0.3:8006/api2/json/nodes/pve1/network?type=any_bridge
 
 fn_help() { (
-    my_hostname="${1:-example101}"
-    my_pubkeys="${2:-}"
+    my_pubkeys="${1:-}"
 
     echo ""
     echo "USAGE"
     echo "    proxmox-create <hostname> [ssh-pubkey-file-url-or-string]"
     echo ""
     echo "EXAMPLE"
-    echo "    proxmox-create '${my_hostname}' ~/.ssh/id_rsa.pub"
+    echo "    proxmox-create 'lxc-101-example' ~/.ssh/id_rsa.pub"
     echo ""
     echo "OPTIONS"
     echo "    --os 'alpine'    # alpine or ubuntu"
@@ -345,6 +344,34 @@ fn_help() { (
             done
         echo ""
     fi
+); }
+
+fn_show_next() { (
+    printf "Finding next available IP for vlan%s...\n" "${PROXMOX_TARGET_VLAN}"
+    my_vlan_1="$(
+        echo "${PROXMOX_TARGET_VLAN}" | cut -c-2
+    )"
+    my_vlan_1=$((my_vlan_1 + 0))
+
+    my_vlan_2="$(
+        echo "${PROXMOX_TARGET_VLAN}" | cut -c3-
+    )"
+    my_vlan_2=$((my_vlan_2 + 0))
+
+    my_next_unit="$(
+        fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
+    )"
+    my_next_ip="$((my_next_unit + 100))"
+    echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}"
+    echo "    255.255.255.0 (/24)"
+
+    my_next_id="${my_next_unit}"
+    my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
+    my_hostname="lxc-${my_next_id}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
+
+    echo ""
+    echo "    proxmox-create 'lxc-101-example' ~/.ssh/id_rsa.pub"
+    echo ""
 ); }
 
 main() { (
@@ -457,31 +484,9 @@ main() { (
 
     if test -z "${my_hostname:-}"; then
         {
-            echo ""
-            printf "Finding next available IP for vlan%s...\n" "${PROXMOX_TARGET_VLAN}"
-            my_vlan_1="$(
-                echo "${PROXMOX_TARGET_VLAN}" | cut -c-2
-            )"
-            my_vlan_1=$((my_vlan_1 + 0))
-
-            my_vlan_2="$(
-                echo "${PROXMOX_TARGET_VLAN}" | cut -c3-
-            )"
-            my_vlan_2=$((my_vlan_2 + 0))
-
-            my_next_unit="$(
-                fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
-            )"
-            my_next_ip="$((my_next_unit + 100))"
-            echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}"
-            echo "    255.255.255.0 (/24)"
+            fn_help "${my_pubkeys}"
+            fn_show_next
         } >&2
-
-        my_next_id="${my_next_unit}"
-        my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
-        my_hostname="lxc-${my_next_id}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
-
-        fn_help "${my_hostname}" "${my_pubkeys}" >&2
         return 1
     fi
     if echo "${my_hostname}" | grep -q -F '.'; then
