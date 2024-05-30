@@ -383,6 +383,16 @@ main() { (
     my_storage='0.1'
     my_duty_cycle='60'
 
+    {
+        # shellcheck disable=SC2012
+        ls -l ~/.config/proxmox-sh/current.env | sed 's;.* /;/;'
+
+        echo "PROXMOX_HOST=${PROXMOX_HOST:-}"
+        echo "PROXMOX_TARGET_NODE=${PROXMOX_TARGET_NODE:-}"
+        echo "PROXMOX_TARGET_VLAN=${PROXMOX_TARGET_VLAN:-}"
+        echo "PROXMOX_SEARCH_SUFFIX=${PROXMOX_SEARCH_SUFFIX:-}"
+    } >&2
+
     while test -n "${1:-}"; do
         b_arg="${1:-}"
         shift
