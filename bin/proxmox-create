@@ -362,15 +362,19 @@ fn_show_next() { (
         fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
     )"
     my_next_ip="$((my_next_unit + 100))"
-    echo "    10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}"
+    my_ip="10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}"
+    echo "    ${my_ip}"
     echo "    255.255.255.0 (/24)"
 
     my_next_id="${my_next_unit}"
     my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
-    my_hostname="lxc-${my_next_id}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
+    my_hostname="lxc-${my_next_id}"
+    my_fqdn="${my_hostname}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
 
     echo ""
-    echo "    proxmox-create 'lxc-101-example' ~/.ssh/id_rsa.pub"
+    echo "    proxmox-create '${my_hostname}' ~/.ssh/id_rsa.pub"
+    echo "    caddy-add '${my_ip}' '${my_fqdn}'"
+    echo "    ssh -oProxyCommand='sclient --alpn ssh %h' '${my_fqdn}'"
     echo ""
 ); }
 
