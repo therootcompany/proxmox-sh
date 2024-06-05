@@ -407,7 +407,7 @@ main() { (
                 return 0
                 ;;
             --nesting)
-                echo "'--nesting' not supported yet" >&2
+                echo "ERROR --nesting is not supported yet" >&2
                 return 1
                 #my_nesting="nesting"
                 ;;
@@ -417,6 +417,7 @@ main() { (
                     ubuntu) ;;
                     alpine) ;;
                     *)
+                        echo "ERROR: --os must 'alpine' or 'ubuntu' (OS name)" >&2
                         fn_help >&2
                         return 1
                         ;;
@@ -427,6 +428,7 @@ main() { (
                 my_vcpus="${1:-}"
                 if test "${my_vcpus}" -lt 1 ||
                     test "${my_vcpus}" -gt 12; then
+                    echo "ERROR: --vcpus must be between 1 and 12 (vCPUs)" >&2
                     fn_help >&2
                     return 1
                 fi
@@ -436,6 +438,7 @@ main() { (
                 my_duty_cycle="${1:-}"
                 if test "${my_duty_cycle}" -lt 1 ||
                     test "${my_duty_cycle}" -gt 100; then
+                    echo "ERROR: --duty-cycle must be between 1 and 100 (percent)" >&2
                     fn_help >&2
                     return 1
                 fi
@@ -445,6 +448,7 @@ main() { (
                 my_ram="${1:-}"
                 if test "${my_ram}" -lt 32 ||
                     test "${my_ram}" -gt 24576; then
+                    echo "ERROR: --ram must be between 32 and 24576 (megabytes)" >&2
                     fn_help >&2
                     return 1
                 fi
@@ -454,17 +458,14 @@ main() { (
                 my_storage="${1:-}"
                 if test "${my_storage}" -lt 1 ||
                     test "${my_storage}" -gt 100; then
+                    echo "ERROR: --storage must be between 1 and 100 (gigabytes)" >&2
                     fn_help >&2
                     return 1
                 fi
                 shift
                 ;;
             --*)
-                {
-                    echo ""
-                    echo "unknown flag '${b_arg}'"
-                    echo ""
-                } >&2
+                echo "ERROR: ${b_arg} is not a known flag" >&2
                 fn_help >&2
                 return 1
                 ;;
@@ -477,11 +478,7 @@ main() { (
                     my_pubkeys="${b_arg}"
                     continue
                 fi
-                {
-                    echo ""
-                    echo "unknown argument '${b_arg}'"
-                    echo ""
-                } >&2
+                echo "ERROR: '${b_arg}' is not a known argument" >&2
                 fn_help >&2
                 return 1
                 ;;
