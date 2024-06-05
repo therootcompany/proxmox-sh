@@ -435,7 +435,7 @@ main() { (
             --duty-cycle)
                 my_duty_cycle="${1:-}"
                 if test "${my_duty_cycle}" -lt 1 ||
-                    test "${my_duty_cycle}" -gt 12; then
+                    test "${my_duty_cycle}" -gt 100; then
                     fn_help >&2
                     return 1
                 fi
