@@ -180,6 +180,8 @@ fn_create_lxc() { (
     my_search_suffix="${PROXMOX_SEARCH_SUFFIX:-}"
     my_nameserver="${PROXMOX_NAMESERVER:-}"
     my_bridge="${PROXMOX_BRIDGE:-vmbr0}"
+    #my_features='nesting=1'
+    my_features="" # only non-default values can be set
 
     my_tmpl_vol=cephfs0
     my_fs_size=8
@@ -192,6 +194,7 @@ fn_create_lxc() { (
         fn_id_to_net "${my_vlan}" "${my_num}"
     )"
 
+    # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/lxc>
     my_task_result="$(
         ${my_curl} -H "${my_auth}" \
             -X POST "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" \
@@ -199,7 +202,9 @@ fn_create_lxc() { (
             --data-urlencode "onboot=1" \
             --data-urlencode "vmid=${my_vlan}${my_3digit}" \
             --data-urlencode "hostname=${my_hostname}" \
+            --data-urlencode "arch=amd64" \
             --data-urlencode "unprivileged=1" \
+            --data-urlencode "features=${my_features}" \
             --data-urlencode "password=${my_password}" \
             --data-urlencode "ssh-public-keys=${my_pubkeys}" \
             --data-urlencode "ostemplate=${my_tmpl_vol}:${my_os_tmpl}" \
