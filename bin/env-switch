@@ -105,6 +105,7 @@ main() { (
                 cut -d '>' -f2 |
                 cut -d' ' -f2
         )"
+        my_current="$(basename "${my_current}")"
     fi
 
     if test -n "${my_current_new}"; then
