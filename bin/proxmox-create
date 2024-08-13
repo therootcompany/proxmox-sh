@@ -152,17 +152,18 @@ fn_ssh_keys() { (
 fn_create_lxc() { (
     # https://192.168.0.3:8006/api2/json/nodes/pve1/lxc
 
-    my_vlan="${1}"
-    my_num="${2}"
-    my_hostname="${3}"
-    my_pubkeys="${4}"
+    my_target_node="${1}"
+    my_vlan="${2}"
+    my_num="${3}"
+    my_hostname="${4}"
+    my_pubkeys="${5}"
 
-    my_os_tmpl="${5}"
-    my_memory="${6}"
-    my_mp0_size="${7}"
-    my_cores="${8}"
-    my_cpulimit="${9}"
-    my_vmid="${10}"
+    my_os_tmpl="${6}"
+    my_memory="${7}"
+    my_mp0_size="${8}"
+    my_cores="${9}"
+    my_cpulimit="${10}"
+    my_vmid="${11}"
 
     my_password="$(
         xxd -l12 -ps /dev/urandom |
@@ -193,7 +194,7 @@ fn_create_lxc() { (
     # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/lxc>
     my_task_result="$(
         ${my_curl} -H "${my_auth}" \
-            -X POST "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" \
+            -X POST "${my_base_url}/nodes/${my_target_node}/lxc" \
             --data-urlencode "start=1" \
             --data-urlencode "onboot=1" \
             --data-urlencode "vmid=${my_vmid}" \
@@ -306,8 +307,9 @@ fn_id_to_net() { (
 ); }
 
 fn_wait_status() { (
-    my_task_id_raw="${1}"
-    my_check_count="${2:-1}"
+    my_target_node="${1}"
+    my_task_id_raw="${2}"
+    my_check_count="${3:-1}"
 
     my_task_id="$(
         printf '%s' "${my_task_id_raw}" |
@@ -318,7 +320,7 @@ fn_wait_status() { (
 
     my_task_result="$(
         ${my_curl} -H "${my_auth}" \
-            "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/tasks/${my_task_id}/status"
+            "${my_base_url}/nodes/${my_target_node}/tasks/${my_task_id}/status"
     )"
 
     my_task_status="$(
@@ -335,7 +337,7 @@ fn_wait_status() { (
 
         sleep 1
         my_check_count="$((my_check_count + 1))"
-        fn_wait_status "${my_task_id_raw}" "${my_check_count}"
+        fn_wait_status "${my_target_node}" "${my_task_id_raw}" "${my_check_count}"
         return 0
     fi
 
@@ -358,11 +360,12 @@ fn_help() { (
     echo "    proxmox-create 'lxc-101-example' ~/.ssh/id_rsa.pub"
     echo ""
     echo "OPTIONS"
-    echo "    --os 'alpine'    # alpine or ubuntu"
-    echo "    --vcpus 2        # 1-12 vCPU Cores"
-    echo "    --duty-cycle 60  # 1-100 %"
-    echo "    --ram 512        # 64-24576 MB"
-    echo "    --storage 1      # 1-250 GB"
+    echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4"
+    echo "    --os 'alpine'         # alpine or ubuntu"
+    echo "    --vcpus 2             # 1-12 vCPU Cores"
+    echo "    --duty-cycle 60       # 1-100 %"
+    echo "    --ram 512             # 64-24576 MB"
+    echo "    --storage 1           # 1-250 GB"
     echo ""
 
     if test -n "${my_pubkeys}"; then
@@ -414,6 +417,7 @@ fn_show_next() { (
 ); }
 
 main() { (
+    my_target_node="${PROXMOX_TARGET_NODE}"
     my_hostname=''
     my_pubkeys=''
     my_os='alpine'
@@ -421,7 +425,7 @@ main() { (
     my_ram='512'
     my_storage='0.1'
     my_duty_cycle='60'
-    my_ha_group="prefer-${PROXMOX_TARGET_NODE}"
+    my_ha_group="prefer-${my_target_node}"
 
     case "${1:-}" in
         version | --version | -V)
@@ -452,7 +456,20 @@ main() { (
             --nesting)
                 echo "ERROR --nesting is not supported yet" >&2
                 return 1
-                #my_nesting="nesting"
+                #my_features="nesting=1"
+                ;;
+            --target-node)
+                my_target_node="${1:-}"
+                my_ha_group="prefer-${my_target_node}"
+                case "${my_target_node}" in
+                    pve1 | pve2 | pve3 | pve4) ;;
+                    *)
+                        echo "ERROR: --target-node must be 'pve1', 'pve2', 'pve3', or 'pve4'" >&2
+                        fn_help >&2
+                        return 1
+                        ;;
+                esac
+                shift
                 ;;
             --os)
                 my_os="${1:-}"
@@ -460,7 +477,7 @@ main() { (
                     ubuntu) ;;
                     alpine) ;;
                     *)
-                        echo "ERROR: --os must 'alpine' or 'ubuntu' (OS name)" >&2
+                        echo "ERROR: --os must be 'alpine' or 'ubuntu' (OS name)" >&2
                         fn_help >&2
                         return 1
                         ;;
@@ -577,7 +594,10 @@ main() { (
 
     {
         echo ""
-        echo "    vmid:          ${my_vmid}"
+        echo "    Host Node:     ${my_target_node}"
+        echo "    ctid:          ${my_vmid}"
+        echo "    HA Group:      ${my_ha_group}"
+        echo ""
         echo "    OS:            ${my_os}"
         echo "    RAM:           ${my_ram}MB"
         echo "    /mnt/storage:  ${my_storage}GB"
@@ -587,11 +607,11 @@ main() { (
     } >&2
 
     my_task_id="$(
-        fn_create_lxc "${PROXMOX_TARGET_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_duty_cycle}" "${my_vmid}"
+        fn_create_lxc "${my_target_node}" "${PROXMOX_TARGET_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_duty_cycle}" "${my_vmid}"
     )"
     {
         echo "Waiting for ${my_task_id}..."
-        fn_wait_status "${my_task_id}"
+        fn_wait_status "${my_target_node}" "${my_task_id}"
         echo ""
         echo "Next steps: add your public domain(s)"
     } >&2
