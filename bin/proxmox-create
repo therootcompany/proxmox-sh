@@ -352,6 +352,10 @@ fn_help() { (
     fi
 ); }
 
+fn_version() { (
+    echo "proxmox-create v0.2024.08.12"
+); }
+
 fn_show_next() { (
     printf "Finding next available IP for vlan%s...\n" "${PROXMOX_TARGET_VLAN}"
     my_vlan_1="$(
@@ -392,6 +396,13 @@ main() { (
     my_ram='512'
     my_storage='0.1'
     my_duty_cycle='60'
+
+    case "${1:-}" in
+        version | --version | -V)
+            fn_version >&2
+            return 0
+            ;;
+    esac
 
     {
         # shellcheck disable=SC2012
