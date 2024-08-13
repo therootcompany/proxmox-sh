@@ -631,7 +631,11 @@ main() { (
         } >&2
         return 1
     fi
-    fn_ha_resources_add "${my_vmid}" "${my_ha_group}" > /dev/null
+    if fn_ha_resources_add "${my_vmid}" "${my_ha_group}" > /dev/null; then
+        echo >&2 "(also added '${my_vmid}' to HA Group '${my_ha_group}'"
+    else
+        echo >&2 "WARN: did not add '${my_vmid}' to HA Group '${my_ha_group}'"
+    fi
 ); }
 
 main "${@:-}"
