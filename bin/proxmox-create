@@ -196,6 +196,7 @@ fn_create_lxc() { (
         ${my_curl} -H "${my_auth}" \
             -X POST "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" \
             --data-urlencode "start=1" \
+            --data-urlencode "onboot=1" \
             --data-urlencode "vmid=${my_vlan}${my_3digit}" \
             --data-urlencode "hostname=${my_hostname}" \
             --data-urlencode "unprivileged=1" \
