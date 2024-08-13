@@ -331,7 +331,7 @@ fn_help() { (
     echo "    --vcpus 2        # 1-12 vCPU Cores"
     echo "    --duty-cycle 60  # 1-100 %"
     echo "    --ram 512        # 64-24576 MB"
-    echo "    --storage 1      # 1-100 GB"
+    echo "    --storage 1      # 1-250 GB"
     echo ""
 
     if test -n "${my_pubkeys}"; then
@@ -457,8 +457,8 @@ main() { (
             --storage)
                 my_storage="${1:-}"
                 if test "${my_storage}" -lt 1 ||
-                    test "${my_storage}" -gt 100; then
-                    echo "ERROR: --storage must be between 1 and 100 (gigabytes)" >&2
+                    test "${my_storage}" -gt 250; then
+                    echo "ERROR: --storage must be between 1 and 250 (gigabytes)" >&2
                     fn_help >&2
                     return 1
                 fi
