@@ -162,11 +162,7 @@ fn_create_lxc() { (
     my_mp0_size="${7}"
     my_cores="${8}"
     my_cpulimit="${9}"
-
-    # 1 => 1001
-    my_3digit="$((my_num + 1000))"
-    # 1001 => 001
-    my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
+    my_vmid="${10}"
 
     my_password="$(
         xxd -l12 -ps /dev/urandom |
@@ -200,7 +196,7 @@ fn_create_lxc() { (
             -X POST "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc" \
             --data-urlencode "start=1" \
             --data-urlencode "onboot=1" \
-            --data-urlencode "vmid=${my_vlan}${my_3digit}" \
+            --data-urlencode "vmid=${my_vmid}" \
             --data-urlencode "hostname=${my_hostname}" \
             --data-urlencode "arch=amd64" \
             --data-urlencode "unprivileged=1" \
@@ -237,6 +233,35 @@ fn_create_lxc() { (
     fi
 
     echo "${my_task_id}"
+); }
+
+fn_ha_groups_list() { (
+    ${my_curl} -H "${my_auth}" \
+        "${my_base_url}/cluster/ha/groups" | jq -r '.data[].group'
+); }
+
+fn_ha_resources_add() { (
+    # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/cluster/ha/resources>
+    # https://192.168.0.3:8006/api2/json/cluster/ha/resources
+
+    my_type="ct" # or vm
+    my_sid="${1}"
+    my_group="${2}"
+    my_state="started"
+    my_max_relocate="1"
+    my_max_restart="1"
+    my_comment=""
+
+    ${my_curl} -H "${my_auth}" \
+        -X POST "${my_base_url}/cluster/ha/resources" \
+        --data-urlencode "type=${my_type}" \
+        --data-urlencode "sid=${my_sid}" \
+        --data-urlencode "group=${my_group}" \
+        --data-urlencode "state=${my_state}" \
+        --data-urlencode "max_relocate=${my_max_relocate}" \
+        --data-urlencode "max_restart=${my_max_restart}" \
+        --data-urlencode "comment=${my_comment}" |
+        jq -r '.data'
 ); }
 
 # Example
@@ -396,6 +421,7 @@ main() { (
     my_ram='512'
     my_storage='0.1'
     my_duty_cycle='60'
+    my_ha_group="prefer-${PROXMOX_TARGET_NODE}"
 
     case "${1:-}" in
         version | --version | -V)
@@ -543,8 +569,15 @@ main() { (
         my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
     fi
 
+    # 1 => 1001
+    my_3digit="$((my_next_unit + 1000))"
+    # 1001 => 001
+    my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
+    my_vmid="${PROXMOX_TARGET_VLAN}${my_3digit}"
+
     {
         echo ""
+        echo "    vmid:          ${my_vmid}"
         echo "    OS:            ${my_os}"
         echo "    RAM:           ${my_ram}MB"
         echo "    /mnt/storage:  ${my_storage}GB"
@@ -552,8 +585,9 @@ main() { (
         echo "                   ${my_duty_cycle}%"
         echo ""
     } >&2
+
     my_task_id="$(
-        fn_create_lxc "${PROXMOX_TARGET_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_duty_cycle}"
+        fn_create_lxc "${PROXMOX_TARGET_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_duty_cycle}" "${my_vmid}"
     )"
     {
         echo "Waiting for ${my_task_id}..."
@@ -561,12 +595,23 @@ main() { (
         echo ""
         echo "Next steps: add your public domain(s)"
     } >&2
+
     printf "    caddy-add " >&2
     echo "${my_ip} ${my_hostname}.${PROXMOX_TARGET_VLAN}${PROXMOX_SEARCH_SUFFIX}"
     {
         echo "    caddy-add ${my_ip} CHANGE-ME.example.com"
         echo ""
     } >&2
+
+    my_ha_groups="$(fn_ha_groups_list | grep '^prefer-')"
+    if ! echo "${my_ha_groups}" | grep -q "^${my_ha_group}$"; then
+        {
+            printf "Warning: '%s' is not in the list of active HA Groups:\n\n%s\n\n" "${my_ha_group}" "${my_ha_groups}"
+            echo "Please update manually"
+        } >&2
+        return 1
+    fi
+    fn_ha_resources_add "${my_vmid}" "${my_ha_group}" > /dev/null
 ); }
 
 main "${@:-}"
