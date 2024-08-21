@@ -361,7 +361,7 @@ fn_help() { (
     echo ""
     echo "OPTIONS"
     echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4"
-    echo "    --os 'alpine'         # alpine or ubuntu"
+    echo "    --os 'alpine18'       # alpine17, alpine18, or ubuntu22"
     echo "    --vcpus 2             # 1-12 vCPU Cores"
     echo "    --duty-cycle 60       # 1-100 %"
     echo "    --ram 512             # 64-24576 MB"
@@ -474,8 +474,8 @@ main() { (
             --os)
                 my_os="${1:-}"
                 case "${my_os}" in
-                    ubuntu) ;;
-                    alpine) ;;
+                    ubuntu | ubuntu22) ;;
+                    alpine | alpine18 | alpine17) ;;
                     *)
                         echo "ERROR: --os must be 'alpine' or 'ubuntu' (OS name)" >&2
                         fn_help >&2
@@ -581,8 +581,12 @@ main() { (
             cut -d'=' -f2 |
             cut -d'/' -f1
     )"
-    my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
-    if test "ubuntu" = "${my_os}"; then
+
+    # default, alpine, alpine18
+    my_os_tmpl=vztmpl/alpine-3.18-bnna_20230607_20240821_amd64.tar.xz
+    if test "apline17" = "${my_os}"; then
+        my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
+    elif test "ubuntu" = "${my_os}" || test "ubuntu22" = "${my_os}"; then
         my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
     fi
 
