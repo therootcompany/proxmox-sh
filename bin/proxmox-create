@@ -555,8 +555,10 @@ main() { (
 
     if test -z "${my_hostname:-}"; then
         {
+            echo "ERROR: hostname argument is required"
             fn_help "${my_pubkeys}"
             fn_show_next
+            echo "ERROR: hostname argument is required"
         } >&2
         return 1
     fi
