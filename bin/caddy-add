@@ -363,6 +363,10 @@ fn_show_ssh_config() { (
     echo ""
     echo "    ssh root@${my_lxc_domain} 'wget -O - https://webi.sh/ssh-adduser | sh'"
     echo ""
+    echo "3. Enjoy!"
+    echo ""
+    echo "    ssh ${my_lxc_domain}"
+    echo ""
     echo "You're NOT DONE yet. See above ^^"
 ); }
 
