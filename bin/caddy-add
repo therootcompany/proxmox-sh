@@ -7,6 +7,8 @@ if test -e ~/.config/caddy-sh/current.env; then
     . ~/.config/caddy-sh/current.env
 fi
 
+g_ts="$(date '+%F_%H.%M.%S')"
+
 # CADDY_HOST
 # CADDY_USER
 # CADDY_PASS
@@ -309,29 +311,70 @@ main() { (
     my_lxc_id="$(echo "${my_lxc_domain:-}" | sed 's;\.;_;g')"
 
     echo "Adding TLS Policy (\"@id\": \"${my_lxc_id}_tls_policy\")..."
-    fn_add_tls_policy "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+    #fn_add_tls_policy "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
     # or fn_add_tls_policy_dns
 
     echo "Enabling TLS Automation for \"${my_lxc_domain}\"..."
-    fn_add_tls_automation "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+    #fn_add_tls_automation "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
     echo "Enabling TLS SNI Routing to SSH:${my_lxc_domain}:22 (\"@id\": \"${my_lxc_id}_tls_routing\")..."
-    fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+    #fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
     if test -n "${my_tls}"; then
 
         # FOR EXTERNAL NETWORK DEVICES / HTTPS CONTAINERS
         echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-        fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
+        #fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
 
     else
 
         # FOR INTERNAL CONTAINERS
         echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-        fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
+        #fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
     fi
 
     fn_show_ssh_config "${my_lxc_ip}" "${my_lxc_domain}"
+); }
+
+fn_ssh_config_init() { (
+    echo ''
+    echo 'Checking ~/.ssh/config ...'
+
+    if ! test -f ~/.ssh/config; then
+        mkdir -p ~/.ssh/
+        chmod 0700 ~/.ssh
+        touch ~/.ssh/config
+
+        chmod 0600 ~/.ssh/config
+        echo "    created ~/.ssh/config"
+    fi
+
+    if ! find ~/.ssh/ -type d -iname '*bnna*' | grep -q bnna; then
+        mkdir -p ~/.ssh/config.d/bnna.d/
+        chmod 0700 ~/.ssh/config.d/
+        chmod 0700 ~/.ssh/config.d/bnna.d/
+        echo "    created ~/.ssh/config.d/bnna.d/"
+    fi
+
+    if ! grep -q 'Include.*bnna' ~/.ssh/config; then
+        cp -RPp ~/.ssh/config ~/.ssh/config."${g_ts}".bak
+        if ! grep -q 'Include.*config\.d' ~/.ssh/config; then
+            printf 'Include ~/.ssh/config.d/*.sshconfig\n' >> \
+                ~/.ssh/config."${g_ts}".tmp
+        fi
+        printf 'Include ~/.ssh/config.d/bnna.d/*.sshconfig\n\n' >> \
+            ~/.ssh/config."${g_ts}".tmp
+        cat ~/.ssh/config."${g_ts}".bak >> ~/.ssh/config."${g_ts}".tmp
+        chmod 0600 ~/.ssh/config."${g_ts}".tmp
+        mv ~/.ssh/config."${g_ts}".tmp ~/.ssh/config
+
+        if ! grep -q 'Include.*config\.d' ~/.ssh/config."${g_ts}".bak; then
+            echo "    added Include ~/.ssh/config.d/*.sshconfig to ~/.ssh/config"
+        fi
+        if ! grep -q 'Include.*config\.d' ~/.ssh/config."${g_ts}".bak; then
+            echo "    added Include ~/.ssh/config.d/bnna.d/*.sshconfig to ~/.ssh/config"
+        fi
+    fi
 ); }
 
 fn_show_ssh_config() { (
@@ -339,33 +382,46 @@ fn_show_ssh_config() { (
     my_lxc_domain="${2}"
     my_lxc_sub="$(echo "${my_lxc_domain}" | cut -d'.' -f1)"
 
+    fn_ssh_config_init
+
+    b_bnnad="${HOME}/.ssh/config.d/bnna.d"
+    if ! test -d "${b_bnnad}"; then
+        b_bnnad="$(find ~/.ssh/ -type d -iname 'bnna' | head -n 1)"
+    fi
+
+    #shellcheck disable=SC2016
+    {
+        echo 'Host ${my_lxc_sub} ${my_lxc_domain}'
+        echo '    # Internal IP: ${my_lxc_ip}'
+        echo '    Hostname ${my_lxc_domain}'
+        echo '    User app'
+        echo '    ProxyCommand sclient --alpn ssh %h'
+        echo ''
+    } > "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new"
+    chmod 0600 "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new"
+    if test -e "${b_bnnad}"/"${my_lxc_sub}.sshconfig"; then
+        if ! diff -w "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig" > /dev/null; then
+            mv "${b_bnnad}/${my_lxc_sub}.sshconfig" "${b_bnnad}/${my_lxc_sub}.${g_ts}.old"
+            echo "    backed up ${b_bnnad}/${my_lxc_sub}.sshconfig"
+            echo "           as ${my_lxc_sub}.${g_ts}.old"
+        fi
+        mv "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig"
+    else
+        mv "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig"
+        echo "    created ${b_bnnad}/${my_lxc_sub}.sshconfig"
+    fi
+    echo '    done'
+
     echo ""
     echo "TO FINISH"
     echo ""
-    echo "0. Manually update ~/.ssh/config includes:"
+    echo "1. If the default 'app' user doesn't already exist, add it:"
     echo ""
-    echo "    if ! grep -q 'Include ~/.ssh/config.d' ~/.ssh/config; then"
-    echo "        echo 'Include ~/.ssh/config.d/*' >> ~/.ssh/config"
-    echo "        mkdir -p ~/.ssh/config.d/"
-    echo "    fi"
+    echo "    ssh root@${my_lxc_domain} 'wget -O - https://webi.sh/ssh-adduser | sh' > ${my_lxc_domain}.new-user.log"
     echo ""
+    echo "2. Enjoy!"
     echo ""
-    echo "1. Manually update ~/.ssh/config.d/bnna.sshconfig:"
-    echo ""
-    echo "    echo 'Host ${my_lxc_sub} ${my_lxc_domain}"
-    echo "        # Internal IP: ${my_lxc_ip}"
-    echo "        Hostname ${my_lxc_domain}"
-    echo "        User app"
-    echo "        ProxyCommand sclient --alpn ssh %h"
-    echo "    ' >> ~/.ssh/config.d/bnna.sshconfig"
-    echo ""
-    echo "2. If the app user doesn't already exist, add it:"
-    echo ""
-    echo "    ssh root@${my_lxc_domain} 'wget -O - https://webi.sh/ssh-adduser | sh'"
-    echo ""
-    echo "3. Enjoy!"
-    echo ""
-    echo "    ssh ${my_lxc_domain}"
+    echo "    ssh ${my_lxc_sub}"
     echo ""
     echo "You're NOT DONE yet. See above ^^"
 ); }
