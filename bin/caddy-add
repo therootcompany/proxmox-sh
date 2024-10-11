@@ -391,9 +391,9 @@ fn_show_ssh_config() { (
 
     #shellcheck disable=SC2016
     {
-        echo 'Host ${my_lxc_sub} ${my_lxc_domain}'
-        echo '    # Internal IP: ${my_lxc_ip}'
-        echo '    Hostname ${my_lxc_domain}'
+        echo "Host ${my_lxc_sub} ${my_lxc_domain}"
+        echo "    # Internal IP: ${my_lxc_ip}"
+        echo "    Hostname ${my_lxc_domain}"
         echo '    User app'
         echo '    ProxyCommand sclient --alpn ssh %h'
         echo ''
