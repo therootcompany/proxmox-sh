@@ -311,26 +311,26 @@ main() { (
     my_lxc_id="$(echo "${my_lxc_domain:-}" | sed 's;\.;_;g')"
 
     echo "Adding TLS Policy (\"@id\": \"${my_lxc_id}_tls_policy\")..."
-    #fn_add_tls_policy "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+    fn_add_tls_policy "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
     # or fn_add_tls_policy_dns
 
     echo "Enabling TLS Automation for \"${my_lxc_domain}\"..."
-    #fn_add_tls_automation "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+    fn_add_tls_automation "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
     echo "Enabling TLS SNI Routing to SSH:${my_lxc_domain}:22 (\"@id\": \"${my_lxc_id}_tls_routing\")..."
-    #fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+    fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
     if test -n "${my_tls}"; then
 
         # FOR EXTERNAL NETWORK DEVICES / HTTPS CONTAINERS
         echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-        #fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
+        fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
 
     else
 
         # FOR INTERNAL CONTAINERS
         echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-        #fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
+        fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
     fi
 
     fn_show_ssh_config "${my_lxc_ip}" "${my_lxc_domain}"
