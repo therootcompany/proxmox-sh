@@ -361,7 +361,7 @@ fn_help() { (
     echo ""
     echo "OPTIONS"
     echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4"
-    echo "    --os 'alpine18'       # alpine17, alpine18, or ubuntu22"
+    echo "    --os 'alpine18'       # alpine17,18,19,20 or ubuntu22,24"
     echo "    --vcpus 2             # 1-12 vCPU Cores"
     echo "    --duty-cycle 60       # 1-100 %"
     echo "    --ram 512             # 64-24576 MB"
@@ -474,8 +474,8 @@ main() { (
             --os)
                 my_os="${1:-}"
                 case "${my_os}" in
-                    ubuntu | ubuntu22) ;;
-                    alpine | alpine18 | alpine17) ;;
+                    ubuntu | ubuntu24 | ubuntu22 | ubuntu20) ;;
+                    alpine | alpine20 | alpine19 | alpine18 | alpine17) ;;
                     *)
                         echo "ERROR: --os must be 'alpine' or 'ubuntu' (OS name)" >&2
                         fn_help >&2
@@ -584,12 +584,34 @@ main() { (
             cut -d'/' -f1
     )"
 
-    # default, alpine, alpine18
-    my_os_tmpl=vztmpl/alpine-3.18-bnna_20230607_20240821_amd64.tar.xz
-    if test "apline17" = "${my_os}"; then
-        my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
-    elif test "ubuntu" = "${my_os}" || test "ubuntu22" = "${my_os}"; then
-        my_os_tmpl=vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst
+    if test -z "${my_os}"; then
+        my_os='alpine'
+    fi
+
+    my_os_tmpl=''
+    if test "alpine" = "${my_os}"; then
+        my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
+    elif test "alpine20" = "${my_os}"; then
+        my_os_tmpl='vztmpl/alpine-3.20-bnna_20240908_20241212_amd64.tar.zst'
+    elif test "alpine19" = "${my_os}"; then
+        my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
+    elif test "alpine18" = "${my_os}"; then
+        my_os_tmpl='vztmpl/alpine-3.18-bnna_20230607_20241212_amd64.tar.zst'
+        #my_os_tmpl='vztmpl/alpine-3.18-bnna_20230607_20240821_amd64.tar.xz'
+    elif test "alpine17" = "${my_os}"; then
+        my_os_tmpl='vztmpl/alpine-3.17-bnna_20221129_20241212_amd64.tar.zst'
+        #my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
+    elif test "ubuntu" = "${my_os}"; then
+        my_os_tmpl='vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst'
+    elif test "ubuntu24" = "${my_os}"; then
+        my_os_tmpl='vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
+    elif test "ubuntu22" = "${my_os}"; then
+        my_os_tmpl='vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst'
+    elif test "ubuntu20" = "${my_os}"; then
+        my_os_tmpl='vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz'
+    else
+        echo "unknown OS template '${my_os}'"
+        return 1
     fi
 
     # 1 => 1001
