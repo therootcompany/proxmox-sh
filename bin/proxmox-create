@@ -381,7 +381,7 @@ fn_help() { (
 ); }
 
 fn_version() { (
-    echo "proxmox-create v0.2024.08.12"
+    echo "proxmox-create v0.2025.02.10"
 ); }
 
 fn_show_next() { (
