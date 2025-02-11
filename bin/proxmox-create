@@ -206,7 +206,7 @@ fn_create_lxc() { (
             --data-urlencode "ssh-public-keys=${my_pubkeys}" \
             --data-urlencode "ostemplate=${my_tmpl_vol}:${my_os_tmpl}" \
             --data-urlencode "rootfs=${my_fs_pool}:${my_fs_size},mountoptions=${my_fs_opts}" \
-            --data-urlencode "mp0=${my_mp0_pool}:${my_mp0_size},mp=${my_mp0_mnt},mountoptions=${my_mp0_opts}" \
+            --data-urlencode "mp0=${my_mp0_pool}:${my_mp0_size},mp=${my_mp0_mnt},mountoptions=${my_mp0_opts},backup=1" \
             --data-urlencode "cores=${my_cores}" \
             --data-urlencode "cpulimit=${my_cpulimit}" \
             --data-urlencode "memory=${my_memory}" \
