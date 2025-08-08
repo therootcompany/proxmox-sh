@@ -7,30 +7,51 @@ if test -e ~/.config/proxmox-sh/current.env; then
     . ~/.config/proxmox-sh/current.env || true
 fi
 
-if test -z "${PROXMOX_HOST:-}" ||
+g_show_help=''
+if test -z "${PROXMOX_BRIDGE:-}" && test -z "${PROXMOX_VNET:-}"; then
+    g_show_help='1'
+fi
+if test -n "${PROXMOX_BRIDGE:-}" && test -n "${PROXMOX_VNET:-}"; then
+    echo "You must set either 'PROXMOX_VNET' or 'PROXMOX_BRIDGE', but not both" >&2
+    exit 1
+fi
+
+if test -n "${g_show_help:-}" ||
+    test -z "${PROXMOX_HOST:-}" ||
+    test -z "${PROXMOX_ID_PREFIX:-}" ||
+    test -z "${PROXMOX_RESOURCE_POOL:-}" ||
+    test -z "${PROXMOX_TEMPLATE_STORAGE:-}" ||
+    test -z "${PROXMOX_FS_POOL:-}" ||
+    test -z "${PROXMOX_DATA_POOL:-}" ||
     test -z "${PROXMOX_TOKEN_ID:-}" ||
     test -z "${PROXMOX_TOKEN_SECRET:-}" ||
     test -z "${PROXMOX_SEARCH_SUFFIX:-}" ||
-    test -z "${PROXMOX_TARGET_NODE:-}" ||
-    test -z "${PROXMOX_TARGET_VLAN:-}"; then
+    test -z "${PROXMOX_TARGET_NODE:-}"; then
 
+    # shellcheck disable=2016,2088
     {
-        # shellcheck disable=2088
         echo "~/.config/proxmox-sh/current.env should contain values like these:"
         echo "(./.env.secret or ./.env may also be used) "
         echo ""
         echo "    # PVE Config"
         echo "    PROXMOX_HOST='pve1.example.net:8006'"
-        echo "    PROXMOX_BRIDGE='vmbr0'"
+        echo "    PROXMOX_VNET='ex1vnet0'"
+        echo "    # xor PROXMOX_BRIDGE='vmbr0'"
+        echo "    # and PROXMOX_VLAN='1100'"
         echo "    PROXMOX_SEARCH_SUFFIX='.localdomain'"
         echo "    PROXMOX_NAMESERVER='172.17.0.1'"
         echo ""
         echo "    # Deploy Config"
         echo "    PROXMOX_TARGET_NODE='pve1'"
-        echo "    PROXMOX_TARGET_VLAN='1100'"
+        echo "    PROXMOX_RESOURCE_POOL='ex1-dev'"
+        echo "    PROXMOX_ID_PREFIX='1100'"
+        echo "    PROXMOX_TEMPLATE_STORAGE='cephfs0'"
+        echo "    PROXMOX_FS_POOL='pool-ex1'"
+        echo "    PROXMOX_DATA_POOL='pool-ex1'"
         echo ""
         echo "    # URL, File or String"
         echo "    PROXMOX_AUTHORIZED_KEYS='https://github.com/me.keys'"
+        echo '    # or PROXMOX_AUTHORIZED_KEYS="$HOME/.ssh/authorized_keys"'
         echo ""
         echo "    # Secrets"
         echo "    PROXMOX_TOKEN_ID='<user>@<strategy>!<token-name>'"
@@ -153,7 +174,10 @@ fn_create_lxc() { (
     # https://192.168.0.3:8006/api2/json/nodes/pve1/lxc
 
     my_target_node="${1}"
-    my_vlan="${2}"
+    my_vlan_param=""
+    if test -n "${2:-}"; then
+        my_vlan_param=",tag=${2}"
+    fi
     my_num="${3}"
     my_hostname="${4}"
     my_pubkeys="${5}"
@@ -176,32 +200,32 @@ fn_create_lxc() { (
 
     my_search_suffix="${PROXMOX_SEARCH_SUFFIX:-}"
     my_nameserver="${PROXMOX_NAMESERVER:-}"
-    my_bridge="${PROXMOX_BRIDGE:-vmbr0}"
+    my_bridge="${PROXMOX_VNET:-$PROXMOX_BRIDGE}"
     #my_features='nesting=1'
     my_features="" # only non-default values can be set
 
-    my_tmpl_vol=cephfs0
+    my_tmpl_vol="${PROXMOX_TEMPLATE_STORAGE}"
     my_fs_size=8
-    my_fs_pool=pool0
-    my_fs_opts=lazytime
-    my_mp0_pool=pool0
+    my_fs_pool="${PROXMOX_FS_POOL}"
+    my_fs_opts='discard;lazytime;noatime'
+    my_mp0_pool="${PROXMOX_DATA_POOL}"
     my_mp0_mnt='/mnt/storage'
-    my_mp0_opts='lazytime;nodev;nosuid'
+    my_mp0_opts='discard;lazytime;noatime;nodev;nosuid'
     my_net="$(
-        fn_id_to_net "${my_vlan}" "${my_num}"
+        fn_id_to_net "${PROXMOX_ID_PREFIX}" "${my_num}"
     )"
 
     # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/lxc>
     my_task_result="$(
         ${my_curl} -H "${my_auth}" \
             -X POST "${my_base_url}/nodes/${my_target_node}/lxc" \
+            --data-urlencode "features=${my_features}" \
             --data-urlencode "start=1" \
             --data-urlencode "onboot=1" \
             --data-urlencode "vmid=${my_vmid}" \
             --data-urlencode "hostname=${my_hostname}" \
-            --data-urlencode "arch=amd64" \
             --data-urlencode "unprivileged=1" \
-            --data-urlencode "features=${my_features}" \
+            --data-urlencode "pool=${PROXMOX_RESOURCE_POOL}" \
             --data-urlencode "password=${my_password}" \
             --data-urlencode "ssh-public-keys=${my_pubkeys}" \
             --data-urlencode "ostemplate=${my_tmpl_vol}:${my_os_tmpl}" \
@@ -211,10 +235,12 @@ fn_create_lxc() { (
             --data-urlencode "cpulimit=${my_cpulimit}" \
             --data-urlencode "memory=${my_memory}" \
             --data-urlencode "swap=0" \
-            --data-urlencode "net0=name=eth0,bridge=${my_bridge},tag=${my_vlan},${my_net},rate=91" \
-            --data-urlencode "searchdomain=${my_vlan}${my_search_suffix}" \
+            --data-urlencode "net0=name=eth0,bridge=${my_bridge}${my_vlan_param},${my_net},rate=91" \
+            --data-urlencode "searchdomain=${PROXMOX_ID_PREFIX}${my_search_suffix}" \
             --data-urlencode "nameserver=${my_nameserver}"
     )"
+    #        --data-urlencode "arch=amd64" \
+
     #{"success":1,"data":"UPID:pve1:000C38ED:01978844:640D7BB1:vzcreate:101:root@pam:"}
 
     my_task_id="$(
@@ -271,17 +297,17 @@ fn_ha_resources_add() { (
 # gw = 10.11.9.1
 fn_id_to_net() { (
     # assumed to be always 4-digits (1101-1199)
-    my_vlan="${1}"
+    my_id_prefix="${1}"
     # assumed to be less than 4-digits (1-154)
     my_num="${2}"
 
     # 1101 => '11' '01'
-    my_vlan_012="$(echo "${my_vlan}" | cut -c'1-2')"
-    my_vlan_034="$(echo "${my_vlan}" | cut -c'3-4')"
+    my_id_prefix_012="$(echo "${my_id_prefix}" | cut -c'1-2')"
+    my_id_prefix_034="$(echo "${my_id_prefix}" | cut -c'3-4')"
 
     # 1101 => '11' '1'
-    my_vlan_12="$((my_vlan_012 + 0))"
-    my_vlan_34="$((my_vlan_034 + 0))"
+    my_id_prefix_12="$((my_id_prefix_012 + 0))"
+    my_id_prefix_34="$((my_id_prefix_034 + 0))"
 
     # 1 => 0001
     # 154 => 0154
@@ -299,11 +325,11 @@ fn_id_to_net() { (
     my_ip_suffix="$((my_num + 100))"
 
     printf "hwaddr=00:52:%s:%s:%s:%s," \
-        "${my_vlan_012}" "${my_vlan_034}" "${my_unit_12}" "${my_unit_34}"
+        "${my_id_prefix_012}" "${my_id_prefix_034}" "${my_unit_12}" "${my_unit_34}"
     printf "ip=10.%s.%s.%s/24," \
-        "${my_vlan_12}" "${my_vlan_34}" "${my_ip_suffix}"
+        "${my_id_prefix_12}" "${my_id_prefix_34}" "${my_ip_suffix}"
     printf "gw=10.%s.%s.1" \
-        "${my_vlan_12}" "${my_vlan_34}"
+        "${my_id_prefix_12}" "${my_id_prefix_34}"
 ); }
 
 fn_wait_status() { (
@@ -363,7 +389,7 @@ fn_help() { (
     echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4"
     echo "    --os 'alpine18'       # alpine17,18,19,20 or ubuntu22,24"
     echo "    --vcpus 2             # 1-12 vCPU Cores"
-    echo "    --duty-cycle 60       # 1-100 %"
+    echo "    --vcpu-limit 1.5      # max vCPU usage (<= vcpus)"
     echo "    --ram 512             # 64-24576 MB"
     echo "    --storage 1           # 1-250 GB"
     echo ""
@@ -381,33 +407,33 @@ fn_help() { (
 ); }
 
 fn_version() { (
-    echo "proxmox-create v0.2025.02.10"
+    echo "proxmox-create v0.2025.08.07"
 ); }
 
 fn_show_next() { (
-    printf "Finding next available IP for vlan%s...\n" "${PROXMOX_TARGET_VLAN}"
-    my_vlan_1="$(
-        echo "${PROXMOX_TARGET_VLAN}" | cut -c-2
+    printf "Finding next available IP for vlan%s...\n" "${PROXMOX_ID_PREFIX}"
+    my_id_prefix_1="$(
+        echo "${PROXMOX_ID_PREFIX}" | cut -c-2
     )"
-    my_vlan_1=$((my_vlan_1 + 0))
+    my_id_prefix_1=$((my_id_prefix_1 + 0))
 
-    my_vlan_2="$(
-        echo "${PROXMOX_TARGET_VLAN}" | cut -c3-
+    my_id_prefix_2="$(
+        echo "${PROXMOX_ID_PREFIX}" | cut -c3-
     )"
-    my_vlan_2=$((my_vlan_2 + 0))
+    my_id_prefix_2=$((my_id_prefix_2 + 0))
 
     my_next_unit="$(
-        fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
+        fn_resources_next_index "${PROXMOX_ID_PREFIX}"
     )"
     my_next_ip="$((my_next_unit + 100))"
-    my_ip="10.${my_vlan_1}.${my_vlan_2}.${my_next_ip}"
+    my_ip="10.${my_id_prefix_1}.${my_id_prefix_2}.${my_next_ip}"
     echo "    ${my_ip}"
     echo "    255.255.255.0 (/24)"
 
     my_next_id="${my_next_unit}"
     my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
     my_hostname="lxc-${my_next_id}"
-    my_fqdn="${my_hostname}.${PROXMOX_TARGET_VLAN}${my_domain_suffix}"
+    my_fqdn="${my_hostname}.${PROXMOX_ID_PREFIX}${my_domain_suffix}"
 
     echo ""
     echo "    proxmox-create '${my_hostname}' ~/.ssh/id_rsa.pub"
@@ -421,11 +447,13 @@ main() { (
     my_hostname=''
     my_pubkeys=''
     my_os='alpine'
-    my_vcpus='2'
+    my_vcpu_limit=''
     my_ram='512'
     my_storage='0.1'
-    my_duty_cycle='60'
-    my_ha_group="prefer-${my_target_node}"
+    my_ha_group=''
+    if test -n "${PROXMOX_HA_ENABLE:-}"; then
+        my_ha_group="prefer-${my_target_node}"
+    fi
 
     case "${1:-}" in
         version | --version | -V)
@@ -440,7 +468,10 @@ main() { (
 
         echo "PROXMOX_HOST=${PROXMOX_HOST:-}"
         echo "PROXMOX_TARGET_NODE=${PROXMOX_TARGET_NODE:-}"
-        echo "PROXMOX_TARGET_VLAN=${PROXMOX_TARGET_VLAN:-}"
+        echo "PROXMOX_ID_PREFIX=${PROXMOX_ID_PREFIX:-}"
+        echo "PROXMOX_BRIDGE=${PROXMOX_BRIDGE:-}"
+        echo "PROXMOX_VLAN=${PROXMOX_VLAN:-}"
+        echo "PROXMOX_VNET=${PROXMOX_VNET:-}"
         echo "PROXMOX_SEARCH_SUFFIX=${PROXMOX_SEARCH_SUFFIX:-}"
     } >&2
 
@@ -460,7 +491,9 @@ main() { (
                 ;;
             --target-node)
                 my_target_node="${1:-}"
-                my_ha_group="prefer-${my_target_node}"
+                if test -n "${PROXMOX_HA_ENABLE:-}"; then
+                    my_ha_group="prefer-${my_target_node}"
+                fi
                 case "${my_target_node}" in
                     pve1 | pve2 | pve3 | pve4) ;;
                     *)
@@ -494,14 +527,22 @@ main() { (
                 fi
                 shift
                 ;;
-            --duty-cycle)
-                my_duty_cycle="${1:-}"
-                if test "${my_duty_cycle}" -lt 1 ||
-                    test "${my_duty_cycle}" -gt 100; then
-                    echo "ERROR: --duty-cycle must be between 1 and 100 (percent)" >&2
+            --vcpu-limit)
+                my_vcpu_limit="${1:-}"
+                if test -z "${my_vcpus:-}"; then
+                    echo "ERROR: --vcpus <n> must be set before --vcpu-limit <f>" >&2
                     fn_help >&2
                     return 1
                 fi
+                if echo "${my_vcpu_limit} < 0.01 || ${my_vcpu_limit} > ${my_vcpus}" | bc -l | grep -q 1; then
+                    echo "ERROR: --vcpu-limit must be between 0.01 and ${my_vcpus}" >&2
+                    fn_help >&2
+                    return 1
+                fi
+                shift
+                ;;
+            --duty-cycle)
+                echo "WARN: --duty-cycle is ignored" >&2
                 shift
                 ;;
             --ram)
@@ -545,6 +586,13 @@ main() { (
         esac
     done
 
+    if test -z "${my_vcpus}"; then
+        my_vcpus="${PROXMOX_VCPUS_DEFAULT:-2}"
+    fi
+    if test -z "${my_vcpu_limit}"; then
+        my_vcpu_limit="${my_vcpus}"
+    fi
+
     if test -z "${my_pubkeys}"; then
         my_pubkeys="${PROXMOX_AUTHORIZED_KEYS:-}"
     fi
@@ -567,14 +615,14 @@ main() { (
         return 1
     fi
 
-    printf "Finding next available id for VLAN %s... " "${PROXMOX_TARGET_VLAN}" >&2
+    printf "Finding next available id for prefix %s... " "${PROXMOX_ID_PREFIX}" >&2
     my_next_unit="$(
-        fn_resources_next_index "${PROXMOX_TARGET_VLAN}"
+        fn_resources_next_index "${PROXMOX_ID_PREFIX}"
     )"
     echo "${my_next_unit}" >&2
 
     my_net="$(
-        fn_id_to_net "${PROXMOX_TARGET_VLAN}" "${my_next_unit}"
+        fn_id_to_net "${PROXMOX_ID_PREFIX}" "${my_next_unit}"
     )"
     my_ip="$(
         echo "${my_net}" |
@@ -618,24 +666,28 @@ main() { (
     my_3digit="$((my_next_unit + 1000))"
     # 1001 => 001
     my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
-    my_vmid="${PROXMOX_TARGET_VLAN}${my_3digit}"
+    my_vmid="${PROXMOX_ID_PREFIX}${my_3digit}"
 
     {
         echo ""
         echo "    Host Node:     ${my_target_node}"
         echo "    ctid:          ${my_vmid}"
-        echo "    HA Group:      ${my_ha_group}"
+        if test -n "${PROXMOX_HA_ENABLE:-}"; then
+            echo "    HA Group:      ${my_ha_group}"
+        else
+            echo "    HA Group:      NOT ENABLED"
+        fi
         echo ""
         echo "    OS:            ${my_os}"
         echo "    RAM:           ${my_ram}MB"
         echo "    /mnt/storage:  ${my_storage}GB"
         echo "    vCPU:          ${my_vcpus} cores"
-        echo "                   ${my_duty_cycle}%"
+        echo "                   ${my_vcpu_limit} (usable)"
         echo ""
     } >&2
 
     my_task_id="$(
-        fn_create_lxc "${my_target_node}" "${PROXMOX_TARGET_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_duty_cycle}" "${my_vmid}"
+        fn_create_lxc "${my_target_node}" "${PROXMOX_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_vcpu_limit}" "${my_vmid}"
     )"
     {
         echo "Waiting for ${my_task_id}..."
@@ -645,24 +697,31 @@ main() { (
     } >&2
 
     printf "    caddy-add " >&2
-    echo "${my_ip} ${my_hostname}.${PROXMOX_TARGET_VLAN}${PROXMOX_SEARCH_SUFFIX}"
+    echo "${my_ip} ${my_hostname}.${PROXMOX_ID_PREFIX}${PROXMOX_SEARCH_SUFFIX}"
     {
         echo "    caddy-add ${my_ip} CHANGE-ME.example.com"
         echo ""
     } >&2
 
-    my_ha_groups="$(fn_ha_groups_list | grep '^prefer-')"
-    if ! echo "${my_ha_groups}" | grep -q "^${my_ha_group}$"; then
-        {
-            printf "Warning: '%s' is not in the list of active HA Groups:\n\n%s\n\n" "${my_ha_group}" "${my_ha_groups}"
-            echo "Please update manually"
-        } >&2
-        return 1
-    fi
-    if fn_ha_resources_add "${my_vmid}" "${my_ha_group}" > /dev/null; then
-        echo >&2 "(also added '${my_vmid}' to HA Group '${my_ha_group}'"
-    else
-        echo >&2 "WARN: did not add '${my_vmid}' to HA Group '${my_ha_group}'"
+    {
+        echo "Warning: HA Groups cannot be modified by non-admin users."
+        echo "         Please update manually"
+    } >&2
+
+    if test -n "${PROXMOX_HA_ENABLE:-}"; then
+        my_ha_groups="$(fn_ha_groups_list | grep '^prefer-')"
+        if ! echo "${my_ha_groups}" | grep -q "^${my_ha_group}$"; then
+            {
+                printf "Warning: '%s' is not in the list of active HA Groups:\n\n%s\n\n" "${my_ha_group}" "${my_ha_groups}"
+                echo "Please update manually"
+            } >&2
+            return 1
+        fi
+        if fn_ha_resources_add "${my_vmid}" "${my_ha_group}" > /dev/null; then
+            echo >&2 "(also added '${my_vmid}' to HA Group '${my_ha_group}'"
+        else
+            echo >&2 "WARN: did not add '${my_vmid}' to HA Group '${my_ha_group}'"
+        fi
     fi
 ); }
 
