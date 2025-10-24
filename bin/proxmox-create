@@ -473,6 +473,7 @@ main() { (
         echo "PROXMOX_VLAN=${PROXMOX_VLAN:-}"
         echo "PROXMOX_VNET=${PROXMOX_VNET:-}"
         echo "PROXMOX_SEARCH_SUFFIX=${PROXMOX_SEARCH_SUFFIX:-}"
+        echo "TLSROUTER_IP_DOMAIN=${TLSROUTER_IP_DOMAIN:-}"
     } >&2
 
     while test -n "${1:-}"; do
@@ -692,22 +693,13 @@ main() { (
     {
         echo "Waiting for ${my_task_id}..."
         fn_wait_status "${my_target_node}" "${my_task_id}"
-        echo ""
-        echo "Next steps: add your public domain(s)"
-    } >&2
-
-    printf "    caddy-add " >&2
-    echo "${my_ip} ${my_hostname}.${PROXMOX_ID_PREFIX}${PROXMOX_SEARCH_SUFFIX}"
-    {
-        echo "    caddy-add ${my_ip} CHANGE-ME.example.com"
-        echo ""
     } >&2
 
     {
+        echo ""
         echo "Warning: HA Groups cannot be modified by non-admin users."
         echo "         Please update manually"
     } >&2
-
     if test -n "${PROXMOX_HA_ENABLE:-}"; then
         my_ha_groups="$(fn_ha_groups_list | grep '^prefer-')"
         if ! echo "${my_ha_groups}" | grep -q "^${my_ha_group}$"; then
@@ -723,6 +715,43 @@ main() { (
             echo >&2 "WARN: did not add '${my_vmid}' to HA Group '${my_ha_group}'"
         fi
     fi
+
+    {
+        echo ""
+        echo ">>> HOW TO ACCESS? <<<"
+        my_ip_label="$(echo "${my_ip}" | tr '.' '-')"
+        my_ip_domain="tls-${my_ip_label}.${TLSROUTER_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
+        my_raw_ip_domain="tcp-${my_ip_label}.${TLSROUTER_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
+        echo ""
+        echo "Domain Setup"
+        echo "    -- typical: proxies http on 3080, ssh on 22 --"
+        echo "    CNAME                ${my_hostname}.yoursite.com ${my_ip_domain}"
+        echo "    -- raw: proxies tcp on 443, ssh on 22 --"
+        echo "    CNAME                ${my_hostname}.yoursite.com ${my_raw_ip_domain}"
+        echo "    -- typical, top-level domains: http on 3080, ssh on 22 --"
+        my_ip_domain_ip="$(dig +short A "${my_ip_domain}")"
+        echo "    A                    ${my_hostname}.yoursite.com ${my_ip_domain_ip}"
+        echo "    SRV       _http._tcp.${my_hostname}.yoursite.com ${my_ip_domain}  3080"
+        echo "    SRV       _http._tcp.${my_hostname}.yoursite.com ${my_ip_domain}  3080"
+        echo "    -- advanced: direct h2 on 443, direct pg on 5432, decrypted mqtt on 11883 --"
+        echo "    SRV         _h2._tcp.${my_hostname}.yoursite.com ${my_raw_ip_domain}   443"
+        echo "    SRV       _http._tcp.${my_hostname}.yoursite.com ${my_raw_ip_domain}   443"
+        echo "    SRV     _webrtc._tcp.${my_hostname}.yoursite.com ${my_raw_ip_domain}   443"
+        echo "    SRV _postgresql._tcp.${my_hostname}.yoursite.com ${my_raw_ip_domain} 15432"
+        echo "    SRV       _mqtt._tcp.${my_hostname}.yoursite.com ${my_ip_domain} 11883"
+        echo "    (see https://github.com/bnnanet/tlsrouter for all supported protocols)"
+        echo ""
+        echo "TCP (raw, encrypted)"
+        echo "    curl ${my_raw_ip_domain} # proxies to port 443 (raw tls)"
+        echo ""
+        echo "HTTP (decrypted)"
+        echo "    curl ${my_ip_domain} # proxies plain http to port 3080 with X-Forwarded-* set"
+        echo ""
+        echo "SSH"
+        echo "    ssh ${my_ip_domain}  # requires ProxCommand sclient --alpn 'ssh' %h"
+        echo ""
+        echo "^^^ HOW TO ACCESS? ^^^"
+    } >&2
 ); }
 
 main "${@:-}"
