@@ -684,7 +684,7 @@ main() { (
    } >&2
 
    my_task_id="$(
-      fn_create_lxc "${my_target_node}" "${PROXMOX_VLAN}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_vcpu_limit}" "${my_vmid}"
+      fn_create_lxc "${my_target_node}" "${PROXMOX_VLAN:-}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_vcpu_limit}" "${my_vmid}"
    )"
    {
       echo "Waiting for ${my_task_id}..."
