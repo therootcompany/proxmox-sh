@@ -96,7 +96,6 @@ fn_lxc_last_id() { (
 
 fn_resources_next_index() { (
    my_prefix="${1}"
-   my_zero="${2:-000}"
 
    # Or https://192.168.0.101:8006/api2/json/cluster/nextid ?
    #echo "${my_base_url}/cluster/resources"
@@ -108,11 +107,13 @@ fn_resources_next_index() { (
    my_resource_ids="$(
       echo "${my_resources}" |
          jq -r '.data[].vmid' |
-         grep "^${my_prefix}"
+         grep "^${my_prefix}" || true
    )"
    if test -z "${my_resource_ids}"; then
-      my_resource_ids="${my_prefix}${my_zero}"
+      echo 1
+      return
    fi
+
    my_resource_last_id="$(
       echo "${my_resource_ids}" |
          sort -u |
