@@ -688,6 +688,7 @@ main() { (
    )"
    {
       echo "Waiting for ${my_task_id}..."
+      sleep 2
       fn_wait_status "${my_target_node}" "${my_task_id}"
    } >&2
 
