@@ -17,6 +17,7 @@ if test -n "${PROXMOX_VNET:-}" && test -n "${PROXMOX_BRIDGE:-}"; then
 fi
 
 PROXMOX_ID_PREFIX="${PROXMOX_ID_PREFIX:-${PROXMOX_ID_VLAN:-}}"
+PROXMOX_ID_START="${PROXMOX_ID_START:-51}"
 
 if test -n "${g_show_help:-}" ||
    test -z "${PROXMOX_HOST:-}" ||
@@ -30,7 +31,8 @@ if test -n "${g_show_help:-}" ||
 
    # Instance Details
    test -z "${PROXMOX_TARGET_NODE:-}" ||
-   test -z "${PROXMOX_ID_PREFIX:-$PROXMOX_VLAN}" ||
+   test -z "${PROXMOX_ID_PREFIX:-}" ||
+   test -z "${PROXMOX_ID_START:-}" ||
    test -z "${PROXMOX_RESOURCE_POOL:-}" ||
    test -z "${PROXMOX_TEMPLATE_STORAGE:-}" ||
    test -z "${PROXMOX_TEMPLATE_DEFAULT:-}" ||
@@ -110,7 +112,7 @@ fn_resources_next_index() { (
          grep "^${my_prefix}" || true
    )"
    if test -z "${my_resource_ids}"; then
-      echo 1
+      echo "${PROXMOX_ID_START}"
       return
    fi
 
@@ -180,7 +182,7 @@ fn_create_lxc() { (
    if test -n "${2:-}"; then
       my_vlan_param=",tag=${2}"
    fi
-   my_num="${3}"
+   my_next_unit="${3}"
    my_hostname="${4}"
    my_pubkeys="${5}"
 
@@ -214,7 +216,7 @@ fn_create_lxc() { (
    my_mp0_mnt='/mnt/storage'
    my_mp0_opts='discard;lazytime;noatime;nodev;nosuid'
    my_net="$(
-      fn_id_to_net "${PROXMOX_ID_PREFIX}" "${my_num}"
+      fn_id_to_net "${PROXMOX_ID_PREFIX}" "${my_next_unit}"
    )"
 
    # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/lxc>
@@ -300,8 +302,8 @@ fn_ha_resources_add() { (
 fn_id_to_net() { (
    # assumed to be always 4-digits (1101-1199)
    my_id_prefix="${1}"
-   # assumed to be less than 4-digits (1-154)
-   my_num="${2}"
+   # assumed to be less than 4-digits (51-254)
+   my_next_unit="${2}"
 
    # 1101 => '11' '01'
    my_id_prefix_012="$(echo "${my_id_prefix}" | cut -c'1-2')"
@@ -313,7 +315,7 @@ fn_id_to_net() { (
 
    # 1 => 0001
    # 154 => 0154
-   my_3digit="$((my_num + 1000))"
+   my_3digit="$((my_next_unit + 1000))"
    my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
    my_4digit="0${my_3digit}"
 
@@ -324,7 +326,7 @@ fn_id_to_net() { (
 
    # 1 => 101
    # 154 => 254
-   my_ip_suffix="$((my_num + 100))"
+   my_ip_suffix="${my_next_unit}"
 
    printf "hwaddr=00:52:%s:%s:%s:%s," \
       "${my_id_prefix_012}" "${my_id_prefix_034}" "${my_unit_12}" "${my_unit_34}"
@@ -427,8 +429,7 @@ fn_show_next() { (
    my_next_unit="$(
       fn_resources_next_index "${PROXMOX_ID_PREFIX}"
    )"
-   my_next_ip="$((my_next_unit + 100))"
-   my_ip="10.${my_id_prefix_1}.${my_id_prefix_2}.${my_next_ip}"
+   my_ip="10.${my_id_prefix_1}.${my_id_prefix_2}.${my_next_unit}"
    echo "    ${my_ip}"
    echo "    255.255.255.0 (/24)"
 ); }
