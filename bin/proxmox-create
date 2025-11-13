@@ -745,7 +745,7 @@ main() { (
       echo "    curl ${my_ip_domain} # proxies plain http to port 3080 with X-Forwarded-* set"
       echo ""
       echo "SSH"
-      echo "    ssh ${my_ip_domain}  # requires ProxCommand sclient --alpn 'ssh' %h"
+      echo "    ssh ${my_ip_domain}  # requires ProxyCommand sclient --alpn 'ssh' %h"
       echo ""
       echo "^^^ HOW TO ACCESS? ^^^"
    } >&2
