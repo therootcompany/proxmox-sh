@@ -8,55 +8,56 @@ if test -e ~/.config/proxmox-sh/current.env; then
 fi
 
 g_show_help=''
-if test -z "${PROXMOX_BRIDGE:-}" && test -z "${PROXMOX_VNET:-}"; then
+if test -z "${PROXMOX_VNET:-}" && test -z "${PROXMOX_BRIDGE:-}"; then
    g_show_help='1'
 fi
-if test -n "${PROXMOX_BRIDGE:-}" && test -n "${PROXMOX_VNET:-}"; then
+if test -n "${PROXMOX_VNET:-}" && test -n "${PROXMOX_BRIDGE:-}"; then
    echo "You must set either 'PROXMOX_VNET' or 'PROXMOX_BRIDGE', but not both" >&2
    exit 1
 fi
 
+PROXMOX_ID_PREFIX="${PROXMOX_ID_PREFIX:-${PROXMOX_ID_VLAN:-}}"
+
 if test -n "${g_show_help:-}" ||
    test -z "${PROXMOX_HOST:-}" ||
-   test -z "${PROXMOX_ID_PREFIX:-}" ||
+
+   # Private Networking
+   # VNET and BRIDGE checked above
+
+   # DNS Defaults
+   test -z "${PROXMOX_NAMESERVER:-}" ||
+   test -z "${PROXMOX_SEARCH_DOMAIN:-}" ||
+
+   # Instance Details
+   test -z "${PROXMOX_TARGET_NODE:-}" ||
+   test -z "${PROXMOX_ID_PREFIX:-$PROXMOX_VLAN}" ||
    test -z "${PROXMOX_RESOURCE_POOL:-}" ||
    test -z "${PROXMOX_TEMPLATE_STORAGE:-}" ||
+   test -z "${PROXMOX_TEMPLATE_DEFAULT:-}" ||
    test -z "${PROXMOX_FS_POOL:-}" ||
    test -z "${PROXMOX_DATA_POOL:-}" ||
+
+   # SSH Keys
+   test -z "${PROXMOX_AUTHORIZED_KEYS:-}" ||
+
+   # Direct IP for TLS Routing
+   test -z "${DIRECT_IP_DOMAIN:-}" ||
+
+   # HA_ENABLE is optional
+
+   # Secrets
    test -z "${PROXMOX_TOKEN_ID:-}" ||
-   test -z "${PROXMOX_TOKEN_SECRET:-}" ||
-   test -z "${PROXMOX_SEARCH_SUFFIX:-}" ||
-   test -z "${PROXMOX_TARGET_NODE:-}"; then
+   test -z "${PROXMOX_TOKEN_SECRET:-}"; then
 
    # shellcheck disable=2016,2088
    {
-      echo "~/.config/proxmox-sh/current.env should contain values like these:"
-      echo "(./.env.secret or ./.env may also be used) "
+      echo "~/.config/proxmox-sh/current.env is missing one or more variables."
+      echo "Set all required variables using this:"
       echo ""
-      echo "    # PVE Config"
-      echo "    PROXMOX_HOST='pve1.example.net:8006'"
-      echo "    PROXMOX_VNET='ex1vnet0'"
-      echo "    # xor PROXMOX_BRIDGE='vmbr0'"
-      echo "    # and PROXMOX_VLAN='1100'"
-      echo "    PROXMOX_SEARCH_SUFFIX='.localdomain'"
-      echo "    PROXMOX_NAMESERVER='172.17.0.1'"
+      cat "$(dirname "${0}")/../example.proxmox-sh.env"
       echo ""
-      echo "    # Deploy Config"
-      echo "    PROXMOX_TARGET_NODE='pve1'"
-      echo "    PROXMOX_RESOURCE_POOL='ex1-dev'"
-      echo "    PROXMOX_ID_PREFIX='1100'"
-      echo "    PROXMOX_TEMPLATE_STORAGE='cephfs0'"
-      echo "    PROXMOX_FS_POOL='pool-ex1'"
-      echo "    PROXMOX_DATA_POOL='pool-ex1'"
-      echo ""
-      echo "    # URL, File or String"
-      echo "    PROXMOX_AUTHORIZED_KEYS='https://github.com/me.keys'"
-      echo '    # or PROXMOX_AUTHORIZED_KEYS="$HOME/.ssh/authorized_keys"'
-      echo ""
-      echo "    # Secrets"
-      echo "    PROXMOX_TOKEN_ID='<user>@<strategy>!<token-name>'"
-      echo "    PROXMOX_TOKEN_SECRET='00000000-0000-4000-8000-000000000000'"
-      echo ""
+      echo "Error: missing required environment variables"
+      echo "       (see above for example)"
    } >&2
    exit 1
 fi
@@ -198,7 +199,7 @@ fn_create_lxc() { (
          tr / _
    )"
 
-   my_search_suffix="${PROXMOX_SEARCH_SUFFIX:-}"
+   my_search_domain="${PROXMOX_SEARCH_DOMAIN:-}"
    my_nameserver="${PROXMOX_NAMESERVER:-}"
    my_bridge="${PROXMOX_VNET:-$PROXMOX_BRIDGE}"
    #my_features='nesting=1'
@@ -236,7 +237,7 @@ fn_create_lxc() { (
          --data-urlencode "memory=${my_memory}" \
          --data-urlencode "swap=0" \
          --data-urlencode "net0=name=eth0,bridge=${my_bridge}${my_vlan_param},${my_net},rate=91" \
-         --data-urlencode "searchdomain=${PROXMOX_ID_PREFIX}${my_search_suffix}" \
+         --data-urlencode "searchdomain=${PROXMOX_ID_PREFIX}.${my_search_domain}" \
          --data-urlencode "nameserver=${my_nameserver}"
    )"
    #        --data-urlencode "arch=amd64" \
@@ -431,9 +432,8 @@ fn_show_next() { (
    echo "    255.255.255.0 (/24)"
 
    my_next_id="${my_next_unit}"
-   my_domain_suffix="${PROXMOX_SEARCH_SUFFIX:-.localdomain}"
    my_hostname="lxc-${my_next_id}"
-   my_fqdn="${my_hostname}.${PROXMOX_ID_PREFIX}${my_domain_suffix}"
+   my_fqdn="${my_hostname}.${PROXMOX_ID_PREFIX}.${PROXMOX_SEARCH_DOMAIN}"
 
    echo ""
    echo "    proxmox-create '${my_hostname}' ~/.ssh/id_rsa.pub"
@@ -471,11 +471,14 @@ main() { (
       echo "PROXMOX_HOST=${PROXMOX_HOST:-}"
       echo "PROXMOX_TARGET_NODE=${PROXMOX_TARGET_NODE:-}"
       echo "PROXMOX_ID_PREFIX=${PROXMOX_ID_PREFIX:-}"
-      echo "PROXMOX_BRIDGE=${PROXMOX_BRIDGE:-}"
-      echo "PROXMOX_VLAN=${PROXMOX_VLAN:-}"
-      echo "PROXMOX_VNET=${PROXMOX_VNET:-}"
-      echo "PROXMOX_SEARCH_SUFFIX=${PROXMOX_SEARCH_SUFFIX:-}"
-      echo "TLSROUTER_IP_DOMAIN=${TLSROUTER_IP_DOMAIN:-}"
+      if test -n "${PROXMOX_VNET:-}" || test -z "${PROXMOX_BRIDGE:-}"; then
+         echo "PROXMOX_VNET=${PROXMOX_VNET:-}"
+      else
+         echo "PROXMOX_BRIDGE=${PROXMOX_BRIDGE:-}"
+         echo "PROXMOX_VLAN=${PROXMOX_VLAN:-}"
+      fi
+      echo "PROXMOX_SEARCH_DOMAIN=${PROXMOX_SEARCH_DOMAIN:-}"
+      echo "DIRECT_IP_DOMAIN=${DIRECT_IP_DOMAIN:-}"
    } >&2
 
    while test -n "${1:-}"; do
@@ -639,7 +642,7 @@ main() { (
       my_os='alpine'
    fi
 
-   my_os_tmpl=''
+   my_os_tmpl="${PROXMOX_TEMPLATE_DEFAULT}"
    if test "alpine" = "${my_os}"; then
       my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
    elif test "alpine20" = "${my_os}"; then
@@ -722,8 +725,8 @@ main() { (
       echo ""
       echo ">>> HOW TO ACCESS? <<<"
       my_ip_label="$(echo "${my_ip}" | tr '.' '-')"
-      my_ip_domain="tls-${my_ip_label}.${TLSROUTER_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
-      my_raw_ip_domain="tcp-${my_ip_label}.${TLSROUTER_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
+      my_ip_domain="tls-${my_ip_label}.${DIRECT_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
+      my_raw_ip_domain="tcp-${my_ip_label}.${DIRECT_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
       echo ""
       echo "Domain Setup"
       echo "    -- typical: proxies http on 3080, ssh on 22 --"
