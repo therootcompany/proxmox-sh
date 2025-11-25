@@ -367,7 +367,7 @@ fn_wait_status() { (
       printf '%s' "${my_task_result}" |
          jq -r '.data.exitstatus'
    )"
-   if test "$my_exit_status" != "OK"; then
+   if test "$my_exit_status" != "null" && test "$my_exit_status" != "OK"; then
       printf '%s' "${my_task_result}" | jq || true
       echo ""
       echo "ERROR:"
