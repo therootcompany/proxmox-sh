@@ -220,6 +220,7 @@ fn_create_lxc() { (
    )"
 
    # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/lxc>
+   echo POST "${my_base_url}/nodes/${my_target_node}/lxc" ... >> /dev/tty
    my_task_result="$(
       ${my_curl} -H "${my_auth}" \
          -X POST "${my_base_url}/nodes/${my_target_node}/lxc" \
@@ -241,8 +242,9 @@ fn_create_lxc() { (
          --data-urlencode "swap=0" \
          --data-urlencode "net0=name=eth0,bridge=${my_bridge}${my_vlan_param},${my_net},rate=91" \
          --data-urlencode "searchdomain=${PROXMOX_ID_PREFIX}.${my_search_domain}" \
-         --data-urlencode "nameserver=${my_nameserver}"
+         --data-urlencode "nameserver=${my_nameserver}" | jq | tee /dev/tty
    )"
+   echo '' >> /dev/tty
    #        --data-urlencode "arch=amd64" \
 
    #{"success":1,"data":"UPID:pve1:000C38ED:01978844:640D7BB1:vzcreate:101:root@pam:"}
