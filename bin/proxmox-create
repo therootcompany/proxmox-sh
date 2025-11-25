@@ -79,7 +79,7 @@ fn_status() { (
    echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status"
    ${my_curl} -H "${my_auth}" \
       "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status" |
-      jq '.'
+      jq '.' | tee /dev/tty
 ); }
 
 fn_lxc_last_id() { (
@@ -350,15 +350,18 @@ fn_wait_status() { (
          sed 's/\(..\)/%\1/g'
    )"
 
+   #echo "GET ${my_base_url}/nodes/${my_target_node}/tasks/<escape(${my_task_id_raw})>/status"
    my_task_result="$(
       ${my_curl} -H "${my_auth}" \
-         "${my_base_url}/nodes/${my_target_node}/tasks/${my_task_id}/status"
+         "${my_base_url}/nodes/${my_target_node}/tasks/${my_task_id}/status" # | jq | tee /dev/tty
    )"
+   #echo ''
 
    my_task_status="$(
       printf '%s' "${my_task_result}" |
          jq -r '.data.status'
    )"
+   echo ''
    echo "Status: ${my_task_status}"
    my_exit_status="$(
       printf '%s' "${my_task_result}" |
@@ -451,7 +454,7 @@ main() { (
    my_target_node="${PROXMOX_TARGET_NODE}"
    my_hostname=''
    my_pubkeys=''
-   my_os='alpine'
+   my_os=''
    my_vcpus='2'
    my_vcpu_limit=''
    my_ram='512'
@@ -519,9 +522,10 @@ main() { (
             my_os="${1:-}"
             case "${my_os}" in
                ubuntu | ubuntu24 | ubuntu22 | ubuntu20) ;;
-               alpine | alpine20 | alpine19 | alpine18 | alpine17) ;;
+               alpine | alpine22 | alpine21 | alpine20 | alpine19 | alpine18 | alpine17) ;;
+               vztmpl/*) ;;
                *)
-                  echo "ERROR: --os must be 'alpine' or 'ubuntu' (OS name)" >&2
+                  echo "ERROR: --os (OS name) must be an OS+version (e.g. 'alpine20', 'ubuntu24'), or template ('vztmpl/ubuntu-24.04-standard.tar.zst'" >&2
                   fn_help >&2
                   return 1
                   ;;
@@ -643,39 +647,43 @@ main() { (
          cut -d'/' -f1
    )"
 
-   if test -z "${my_os}"; then
-      my_os='alpine'
-   fi
-
    my_os_tmpl="${PROXMOX_TEMPLATE_DEFAULT}"
-   if test "alpine" = "${my_os}"; then
-      my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
-   elif test "alpine20" = "${my_os}"; then
-      my_os_tmpl='vztmpl/alpine-3.20-bnna_20240908_20241212_amd64.tar.zst'
-   elif test "alpine19" = "${my_os}"; then
-      my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
-   elif test "alpine18" = "${my_os}"; then
-      my_os_tmpl='vztmpl/alpine-3.18-bnna_20230607_20241212_amd64.tar.zst'
-      #my_os_tmpl='vztmpl/alpine-3.18-bnna_20230607_20240821_amd64.tar.xz'
-   elif test "alpine17" = "${my_os}"; then
-      my_os_tmpl='vztmpl/alpine-3.17-bnna_20221129_20241212_amd64.tar.zst'
-      #my_os_tmpl=vztmpl/alpine-3.17-ssh+webi_20221129_amd64.tar.xz
-   elif test "ubuntu" = "${my_os}"; then
-      my_os_tmpl='vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst'
-   elif test "ubuntu24" = "${my_os}"; then
-      my_os_tmpl='vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
-   elif test "ubuntu22" = "${my_os}"; then
-      my_os_tmpl='vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst'
-   elif test "ubuntu20" = "${my_os}"; then
-      my_os_tmpl='vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz'
-   else
-      echo "unknown OS template '${my_os}'"
-      return 1
-   fi
+   case "${my_os}" in
+      '') ;;
+      vztmpl/*)
+         my_os_tmpl="${my_os}"
+         ;;
+      apline | alpine20)
+         my_os_tmpl='vztmpl/alpine-3.20-bnna_20240908_20241212_amd64.tar.zst'
+         ;;
+      alpine19)
+         my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
+         ;;
+      alpine18)
+         my_os_tmpl='vztmpl/alpine-3.18-bnna_20230607_20241212_amd64.tar.zst'
+         ;;
+      alpine17)
+         my_os_tmpl='vztmpl/alpine-3.17-bnna_20221129_20241212_amd64.tar.zst'
+         ;;
+      ubuntu | ubuntu24)
+         my_os_tmpl='vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
+         ;;
+      ubuntu22)
+         my_os_tmpl='vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst'
+         ;;
+      ubuntu20)
+         my_os_tmpl='vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz'
+         ;;
+      *)
+         echo "unknown OS template '${my_os}' - should be a name like 'alpine20' or a 'vztmpl/'-prefixed tarball path like 'vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst')"
+         return 1
+         ;;
+   esac
 
-   # 1 => 1001
+   # This adds leading zeros
+   # first: 1 => 1001
    my_3digit="$((my_next_unit + 1000))"
-   # 1001 => 001
+   # then:  1001 => 001
    my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
    my_vmid="${PROXMOX_ID_PREFIX}${my_3digit}"
 
@@ -702,7 +710,6 @@ main() { (
    )"
    {
       echo "Waiting for ${my_task_id}..."
-      sleep 2
       fn_wait_status "${my_target_node}" "${my_task_id}"
    } >&2
 
