@@ -360,6 +360,17 @@ fn_wait_status() { (
          jq -r '.data.status'
    )"
    echo "Status: ${my_task_status}"
+   my_exit_status="$(
+      printf '%s' "${my_task_result}" |
+         jq -r '.data.exitstatus'
+   )"
+   if test "$my_exit_status" != "OK"; then
+      printf '%s' "${my_task_result}" | jq || true
+      echo ""
+      echo "ERROR:"
+      echo "   ${my_exit_status:-Unknown Error}"
+      return 1
+   fi
 
    if test "${my_task_status}" = "running"; then
       if test "${my_check_count}" -ge 30; then
