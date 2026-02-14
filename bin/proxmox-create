@@ -735,12 +735,20 @@ main() { (
       } >&2
    fi
 
+   my_ip_label="$(echo "${my_ip}" | tr '.' '-')"
+   my_ip_domain="tls-${my_ip_label}.${DIRECT_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
+   my_raw_ip_domain="tcp-${my_ip_label}.${DIRECT_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
+
+   # Initiate ACME TLS now to avoid confusing browser and/or ssh errors
+   echo ""
+   printf "Waiting for TLS certificate issuance..."
+   if curl -s "https://${my_ip_domain}" > /dev/null; then
+      echo 'done'
+   fi
+
    {
       echo ""
       echo ">>> HOW TO ACCESS? <<<"
-      my_ip_label="$(echo "${my_ip}" | tr '.' '-')"
-      my_ip_domain="tls-${my_ip_label}.${DIRECT_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
-      my_raw_ip_domain="tcp-${my_ip_label}.${DIRECT_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
       echo ""
       echo "Domain Setup"
       echo "    -- typical: proxies http on 3080, ssh on 22 --"
