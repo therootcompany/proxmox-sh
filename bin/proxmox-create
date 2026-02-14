@@ -713,11 +713,6 @@ main() { (
       fn_wait_status "${my_target_node}" "${my_task_id}"
    } >&2
 
-   {
-      echo ""
-      echo "Warning: HA Groups cannot be modified by non-admin users."
-      echo "         Please update manually"
-   } >&2
    if test -n "${PROXMOX_HA_ENABLE:-}"; then
       my_ha_groups="$(fn_ha_groups_list | grep '^prefer-')"
       if ! echo "${my_ha_groups}" | grep -q "^${my_ha_group}$"; then
@@ -732,6 +727,12 @@ main() { (
       else
          echo >&2 "WARN: did not add '${my_vmid}' to HA Group '${my_ha_group}'"
       fi
+   else
+      {
+         echo ""
+         echo "Note: HA Groups cannot be modified by non-admin users."
+         echo "      Update manually if needed."
+      } >&2
    fi
 
    {
