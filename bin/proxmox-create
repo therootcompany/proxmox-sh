@@ -20,7 +20,7 @@ PROXMOX_ID_PREFIX="${PROXMOX_ID_PREFIX:-${PROXMOX_ID_VLAN:-}}"
 PROXMOX_ID_START="${PROXMOX_ID_START:-51}"
 
 if test -n "${g_show_help:-}" ||
-   test -z "${PROXMOX_HOST:-}" ||
+   { test -z "${PROXMOX_BASE_URL:-}" && test -z "${PROXMOX_HOST:-}"; } ||
 
    # Private Networking
    # VNET and BRIDGE checked above
@@ -65,7 +65,18 @@ if test -n "${g_show_help:-}" ||
 fi
 
 my_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
-my_base_url="https://${PROXMOX_HOST}/api2/json"
+if test -n "${PROXMOX_BASE_URL:-}"; then
+   case "${PROXMOX_BASE_URL}" in
+      http*) ;;
+      *)
+         echo "Error: PROXMOX_BASE_URL must begin with 'http'" >&2
+         exit 1
+         ;;
+   esac
+   my_base_url="${PROXMOX_BASE_URL%/}"
+else
+   my_base_url="https://${PROXMOX_HOST}/api2/json"
+fi
 my_curl="curl --max-time 15 --fail-with-body -sSL"
 
 fn_discover() { (
@@ -476,7 +487,7 @@ main() { (
       # shellcheck disable=SC2012
       ls -l ~/.config/proxmox-sh/current.env | sed 's;.* /;/;'
 
-      echo "PROXMOX_HOST=${PROXMOX_HOST:-}"
+      echo "PROXMOX_BASE_URL=${my_base_url}"
       echo "PROXMOX_TARGET_NODE=${PROXMOX_TARGET_NODE:-}"
       echo "PROXMOX_ID_PREFIX=${PROXMOX_ID_PREFIX:-}"
       if test -n "${PROXMOX_VNET:-}" || test -z "${PROXMOX_BRIDGE:-}"; then
