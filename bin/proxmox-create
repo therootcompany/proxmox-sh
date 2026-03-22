@@ -34,8 +34,6 @@ if test -n "${g_show_help:-}" ||
    test -z "${PROXMOX_ID_PREFIX:-}" ||
    test -z "${PROXMOX_ID_START:-}" ||
    test -z "${PROXMOX_RESOURCE_POOL:-}" ||
-   test -z "${PROXMOX_TEMPLATE_STORAGE:-}" ||
-   test -z "${PROXMOX_TEMPLATE_DEFAULT:-}" ||
    test -z "${PROXMOX_FS_POOL:-}" ||
    test -z "${PROXMOX_DATA_POOL:-}" ||
 
@@ -219,7 +217,6 @@ fn_create_lxc() { (
    #my_features='nesting=1'
    my_features="" # only non-default values can be set
 
-   my_tmpl_vol="${PROXMOX_TEMPLATE_STORAGE}"
    my_fs_size=8
    my_fs_pool="${PROXMOX_FS_POOL}"
    my_fs_opts='discard;lazytime;noatime'
@@ -244,7 +241,7 @@ fn_create_lxc() { (
          --data-urlencode "pool=${PROXMOX_RESOURCE_POOL}" \
          --data-urlencode "password=${my_password}" \
          --data-urlencode "ssh-public-keys=${my_pubkeys}" \
-         --data-urlencode "ostemplate=${my_tmpl_vol}:${my_os_tmpl}" \
+         --data-urlencode "ostemplate=${my_os_tmpl}" \
          --data-urlencode "rootfs=${my_fs_pool}:${my_fs_size},mountoptions=${my_fs_opts}" \
          --data-urlencode "mp0=${my_mp0_pool}:${my_mp0_size},mp=${my_mp0_mnt},mountoptions=${my_mp0_opts},backup=1" \
          --data-urlencode "cores=${my_cores}" \
@@ -406,6 +403,72 @@ fn_wait_status() { (
 # https://192.168.0.3:8006/api2/json/nodes
 # https://192.168.0.3:8006/api2/json/nodes/pve1/network?type=any_bridge
 
+fn_list_templates() { (
+   # Step 1: discover all storages that carry vztmpl content
+   my_storages="$(
+      ${my_curl} -H "${my_auth}" \
+         "${my_base_url}/cluster/resources?type=storage" |
+         jq -r '.data[] | select(.status=="available") | select(.content | test("vztmpl")) | "\(.node) \(.storage)"' |
+         sort -u -k2,2
+   )"
+
+   if test -z "${my_storages}"; then
+      return 0
+   fi
+
+   # Step 2: list templates from each storage, returning full volids
+   printf '%s\n' "${my_storages}" | while IFS=' ' read -r my_node my_storage; do
+      ${my_curl} -H "${my_auth}" \
+         "${my_base_url}/nodes/${my_node}/storage/${my_storage}/content?content=vztmpl" |
+         jq -r '.data[].volid'
+   done | sort -u
+); }
+
+fn_select_template() { (
+   my_tmpl_list="$(fn_list_templates)"
+   if test -z "${my_tmpl_list}"; then
+      echo "ERROR: no OS templates found across any available storage" >&2
+      return 1
+   fi
+
+   my_tmpl_count="$(printf '%s\n' "${my_tmpl_list}" | wc -l | tr -d ' ')"
+
+   # Find the position of PROXMOX_TEMPLATE_DEFAULT in the list (if set)
+   my_default_num=""
+   if test -n "${PROXMOX_TEMPLATE_DEFAULT:-}"; then
+      my_default_num="$(
+         printf '%s\n' "${my_tmpl_list}" |
+            awk -v name="${PROXMOX_TEMPLATE_DEFAULT}" '$0 == name {print NR; exit}'
+      )"
+   fi
+
+   printf '\nAvailable OS templates:\n' >&2
+   printf '%s\n' "${my_tmpl_list}" | awk '{printf "  %d) %s\n", NR, $0}' >&2
+   if test -n "${my_default_num}"; then
+      printf '\nSelect template [1-%d, default %s]: ' "${my_tmpl_count}" "${my_default_num}" >&2
+   else
+      printf '\nSelect template [1-%d]: ' "${my_tmpl_count}" >&2
+   fi
+   read -r my_choice
+
+   if test -z "${my_choice}" && test -n "${my_default_num}"; then
+      my_choice="${my_default_num}"
+   fi
+
+   case "${my_choice}" in
+      '' | *[!0-9]*)
+         echo "ERROR: invalid selection '${my_choice}'" >&2
+         return 1
+         ;;
+   esac
+   if test "${my_choice}" -lt 1 || test "${my_choice}" -gt "${my_tmpl_count}"; then
+      echo "ERROR: selection out of range (1-${my_tmpl_count})" >&2
+      return 1
+   fi
+
+   printf '%s\n' "${my_tmpl_list}" | sed -n "${my_choice}p"
+); }
+
 fn_help() { (
    my_pubkeys="${1:-}"
 
@@ -418,7 +481,7 @@ fn_help() { (
    echo ""
    echo "OPTIONS"
    echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4"
-   echo "    --os 'alpine18'       # alpine17,18,19,20 or ubuntu22,24"
+   echo "    --os 'storage:vztmpl/name.tar.zst'  # pass a specific template; omit for interactive list"
    echo "    --vcpus 2             # 1-12 vCPU Cores"
    echo "    --vcpu-limit 1.5      # max vCPU usage (<= vcpus)"
    echo "    --ram 512             # 64-24576 MB"
@@ -532,11 +595,10 @@ main() { (
          --os)
             my_os="${1:-}"
             case "${my_os}" in
-               ubuntu | ubuntu24 | ubuntu22 | ubuntu20) ;;
-               alpine | alpine22 | alpine21 | alpine20 | alpine19 | alpine18 | alpine17) ;;
-               vztmpl/*) ;;
+               *:vztmpl/*) ;;
                *)
-                  echo "ERROR: --os (OS name) must be an OS+version (e.g. 'alpine20', 'ubuntu24'), or template ('vztmpl/ubuntu-24.04-standard.tar.zst'" >&2
+                  echo "ERROR: --os must be a full volid (e.g. 'cephfs0:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst')" >&2
+                  echo "       Run without --os for an interactive list." >&2
                   fn_help >&2
                   return 1
                   ;;
@@ -658,35 +720,23 @@ main() { (
          cut -d'/' -f1
    )"
 
-   my_os_tmpl="${PROXMOX_TEMPLATE_DEFAULT}"
+   my_os_tmpl="${PROXMOX_TEMPLATE_DEFAULT:-}"
    case "${my_os}" in
-      '') ;;
-      vztmpl/*)
+      '')
+         if test -z "${my_os_tmpl}" && test -t 0; then
+            my_os_tmpl="$(fn_select_template)"
+         elif test -z "${my_os_tmpl}"; then
+            echo "ERROR: --os is required in non-interactive mode (no PROXMOX_TEMPLATE_DEFAULT set)" >&2
+            return 1
+         fi
+         ;;
+      *:vztmpl/*)
          my_os_tmpl="${my_os}"
          ;;
-      apline | alpine20)
-         my_os_tmpl='vztmpl/alpine-3.20-bnna_20240908_20241212_amd64.tar.zst'
-         ;;
-      alpine19)
-         my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
-         ;;
-      alpine18)
-         my_os_tmpl='vztmpl/alpine-3.18-bnna_20230607_20241212_amd64.tar.zst'
-         ;;
-      alpine17)
-         my_os_tmpl='vztmpl/alpine-3.17-bnna_20221129_20241212_amd64.tar.zst'
-         ;;
-      ubuntu | ubuntu24)
-         my_os_tmpl='vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
-         ;;
-      ubuntu22)
-         my_os_tmpl='vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst'
-         ;;
-      ubuntu20)
-         my_os_tmpl='vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz'
-         ;;
       *)
-         echo "unknown OS template '${my_os}' - should be a name like 'alpine20' or a 'vztmpl/'-prefixed tarball path like 'vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst')"
+         echo "ERROR: --os must be a 'vztmpl/'-prefixed path (e.g. 'vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst')" >&2
+         echo "       Run without --os for an interactive list." >&2
+         fn_help >&2
          return 1
          ;;
    esac
