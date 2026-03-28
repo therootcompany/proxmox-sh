@@ -27,7 +27,11 @@ Present the numbered list to the user. Guide the choice:
 - Prefer: `custom` > `bnna` variant > `standard`
 - The `default` tag marks the env's `PROXMOX_TEMPLATE_DEFAULT`
 
-### Step 3: Run the command
+### Step 3: Confirm before creating
+
+NEVER: Run `proxmox-create` without first presenting the plan to the user (hostname, template, RAM/vCPU/storage, active profile) and receiving explicit confirmation.
+
+### Step 4: Run the command
 
 MUST: Always pass `--os` with a full `vztmpl/...` path.
 
@@ -87,9 +91,11 @@ GW:     10.11.4.1
 
 ## Post-Creation
 
-1. **TLS certificate** -- `proxmox-create` initiates ACME issuance automatically
+1. **TLS certificate** -- `proxmox-create` initiates ACME issuance automatically.
+   TLS issuance continues after `expect eof` returns -- the container is created
+   but SSH via the `tls-` domain won't work until the cert is ready (~10-30s).
 2. **DNS** -- Set up friendly domains (see `proxmox-dns` skill)
-3. **SSH access** -- Wait for container init, then confirm:
+3. **SSH access** -- Wait for container init and TLS cert, then confirm:
 
 ```sh
 sh ~/Agents/skills/proxmox/scripts/proxmox-sh-ssh-wait <direct-ip-domain> [<friendly-domain>]

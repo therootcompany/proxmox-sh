@@ -25,7 +25,9 @@ set -u
 #   0 - SSH ready on direct-IP (friendly domain may have warned)
 #   1 - SSH not ready after retries
 #
-# AGENT: After this script succeeds, present the user a summary table:
+# AGENT: TLS cert issuance continues after proxmox-create exits. If ssh-wait
+#   fails on the first run, wait 30s and retry once -- the cert may still be
+#   issuing. After this script succeeds, present the user a summary table:
 #   CTID, OS, user, direct-IP domain, friendly domain (if set), ssh command.
 #   On DNS WARN: verify the record was created correctly using domainpanel.
 #     - Subdomain: check CNAME points to the tls- direct-IP domain

@@ -6,15 +6,14 @@ description:
   runs the doctor script and points to focused sub-skills.
 ---
 
-**Self-improving process.** As you work through these steps, note anything
-confusing, missing, or wrong -- unclear script output, missing agent hints,
-wrong defaults, steps that should be automated. Collect these as you go.
+**You (the agent)** run all scripts on behalf of the user. Each step produces
+structured output with `# AGENT:` hints -- read them and act accordingly.
+Only escalate to the user on actual roadblocks or decisions that need their input.
+"The user" always means the person you're assisting.
 
 ## End-to-End Workflow
 
-The full deploy flow runs in order. Each step produces structured output with
-`# AGENT:` hints. Run each script, read the hints, and act on them.
-
+0. **Note issues** -- as you go, note anything confusing, missing, or wrong
 1. **Doctor** -- validate environment, check connectivity
 2. **Scan** -- list available pools, VMs, storages, SDN
 3. **Confirm profile** -- pick or confirm the Proxmox account
@@ -23,6 +22,7 @@ The full deploy flow runs in order. Each step produces structured output with
 6. **Create VM** -- provision the LXC container (see `proxmox-create-vm` skill)
 7. **DNS** -- map a friendly domain to the VM (see `proxmox-dns` skill)
 8. **SSH verify** -- confirm SSH access, check DNS propagation
+9. **Review** -- check your notes; suggest updates to scripts or skills
 
 Steps 1-4 are startup/pre-flight. Steps 5-8 are the create flow.
 Not every task needs all steps -- listing VMs only needs 1-3.
@@ -224,8 +224,3 @@ Installed at `~/.local/opt/proxmox-sh/`, commands in `bin/`:
 | `proxmox-sh-update` | Git pull latest proxmox-sh |
 | `caddy-add` | Add reverse proxy routes via Caddy API |
 
-## After Completion
-
-Review your notes from the process. If anything was confusing, missing, or
-wrong -- suggest updates to the scripts or skill files so the next run is
-smoother.
