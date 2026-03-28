@@ -1,0 +1,151 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-ssh-wait: wait for SSH readiness after container creation
+#
+# Output: TSV with user and host on success.
+# Designed for the agent to confirm SSH access post-create.
+#
+# Usage:
+#   proxmox-sh-ssh-wait <direct-ip-domain> [<friendly-domain>]
+#
+# Examples (IP 10.11.4.209, DIRECT_IP_DOMAIN=vms.example.com):
+#   proxmox-sh-ssh-wait tls-10-11-4-209.vms.example.com
+#   proxmox-sh-ssh-wait tls-10-11-4-209.vms.example.com dev-209.example.com
+#
+# Phase 1: Wait for SSH on the direct-IP domain (7s/15s/15s backoff).
+# Phase 2: If a friendly domain is given, poll DNS propagation (max 20s).
+#
+# If the friendly domain fails to resolve, the script prints a WARN
+# instructing the agent to verify the DNS record was created correctly
+# (CNAME for subdomains, A+SRV for apex domains).
+#
+# Exit codes:
+#   0 - SSH ready on direct-IP (friendly domain may have warned)
+#   1 - SSH not ready after retries
+#
+# AGENT: After this script succeeds, present the user a summary table:
+#   CTID, OS, user, direct-IP domain, friendly domain (if set), ssh command.
+#   On DNS WARN: verify the record was created correctly using domainpanel.
+#     - Subdomain: check CNAME points to the tls- direct-IP domain
+#     - Apex domain: check A record + SRV record (apex only, not subdomains)
+
+fn_usage() {
+	echo "Usage: proxmox-sh-ssh-wait <direct-ip-domain> [<friendly-domain>]"
+	echo ""
+	echo "Wait for SSH readiness after container creation."
+	echo "Tries root first, then app if auth denied."
+	echo "If friendly domain given, polls DNS propagation (max 20s)."
+}
+
+fn_try_ssh() {
+	a_user="${1}"
+	a_host="${2}"
+	ssh -o ConnectTimeout=5 \
+		-o StrictHostKeyChecking=accept-new \
+		-o BatchMode=yes \
+		"${a_user}@${a_host}" 'hostname' 2>/dev/null
+}
+
+fn_try_users() {
+	a_host="${1}"
+
+	# Try root first (standard/default templates)
+	if b_hostname="$(fn_try_ssh root "${a_host}")"; then
+		echo "root"
+		return 0
+	fi
+
+	# If SSH responded but auth failed, try app (custom/bnna templates)
+	sleep 2
+	if b_hostname="$(fn_try_ssh app "${a_host}")"; then
+		echo "app"
+		return 0
+	fi
+
+	return 1
+}
+
+fn_wait_dns() {
+	a_friendly="${1}"
+	a_user="${2}"
+
+	echo ""
+	echo "# dns-check"
+	printf 'friendly\t%s\n' "${a_friendly}"
+
+	b_elapsed=0
+	while test "${b_elapsed}" -lt 20; do
+		if b_hostname="$(fn_try_ssh "${a_user}" "${a_friendly}")"; then
+			printf 'ssh\tOK\n'
+			return 0
+		fi
+		echo "# waiting 5s for DNS..."
+		sleep 5
+		b_elapsed=$((b_elapsed + 5))
+	done
+
+	echo "WARN: friendly domain not reachable after 20s" >&2
+	echo "WARN: agent should verify DNS records:" >&2
+	echo "WARN:   subdomain => check CNAME points to direct-IP domain" >&2
+	echo "WARN:   apex domain => check A record + SRV record" >&2
+	printf 'ssh\tFAIL\n'
+	return 1
+}
+
+main() {
+	case "${1:-}" in
+	--help | -help | help)
+		fn_usage
+		return 0
+		;;
+	"")
+		echo "ERROR: direct-ip-domain required" >&2
+		echo ""
+		fn_usage >&2
+		return 1
+		;;
+	esac
+
+	b_host="${1}"
+	b_friendly="${2:-}"
+
+	echo "# ssh-wait"
+	printf 'target\t%s\n' "${b_host}"
+
+	# Phase 1: wait for SSH on direct-IP domain
+	b_user=""
+
+	echo "# waiting 7s..."
+	sleep 7
+	b_user="$(fn_try_users "${b_host}")" || true
+
+	if test -z "${b_user}"; then
+		echo "# waiting 15s..."
+		sleep 15
+		b_user="$(fn_try_users "${b_host}")" || true
+	fi
+
+	if test -z "${b_user}"; then
+		echo "# waiting 15s..."
+		sleep 15
+		b_user="$(fn_try_users "${b_host}")" || true
+	fi
+
+	if test -z "${b_user}"; then
+		echo "ERROR: SSH not ready after 37s" >&2
+		return 1
+	fi
+
+	printf 'user\t%s\n' "${b_user}"
+	printf 'host\t%s\n' "${b_host}"
+	echo "# OK"
+
+	# Phase 2: if friendly domain given, poll DNS propagation
+	if test -n "${b_friendly}"; then
+		fn_wait_dns "${b_friendly}" "${b_user}" || true
+	fi
+}
+
+main "$@"

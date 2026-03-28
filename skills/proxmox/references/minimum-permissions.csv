@@ -1,0 +1,44 @@
+operation,privilege,acl_path,builtin_role,scopeable,gap_notes
+# Audit — see what you have
+List own pools,Pool.Audit,/pool/{pool},PVEPoolAdmin,yes,
+Get pool members,Pool.Audit,/pool/{pool},PVEPoolAdmin,yes,
+List VMs/CTs in pool,VM.Audit,/pool/{pool},PVEVMAdmin,yes,inherits to pool members
+Get VM/CT status and config,VM.Audit,/vms/{vmid},PVEVMAdmin,yes,
+List storage content (templates),Datastore.Audit,/storage/{storage},PVEDatastoreUser,yes,
+Query own token permissions,(any),/access/permissions,,yes,always works
+List cluster resources,Sys.Audit,/,PVEAuditor,no,returns ALL cluster VMs; no per-pool filter; use pool endpoint instead
+Node summary (cpu/mem/uptime),Sys.Audit,/nodes/{node},PVEAuditor,no,requires node-level grant; tenant cannot see host utilization without it
+Read VM metrics / RRD,VM.Audit,/vms/{vmid},PVEVMAdmin,yes,per-VM only; no aggregate dashboard without Sys.Audit on node
+# VM / CT Lifecycle
+Create CT or VM,VM.Allocate + VM.Config.*,/pool/{pool},PVEVMAdmin,yes,also needs Datastore.AllocateSpace on storage
+Allocate disk for new VM,Datastore.AllocateSpace,/storage/{storage},PVEDatastoreAdmin,yes,
+Add new VM to pool,Pool.Allocate,/pool/{pool},PVEPoolAdmin,yes,
+Attach NIC to vnet,SDN.Use,/sdn/zones/{zone},PVESDNUser,yes,zone grant covers all vnets in it
+Start / stop / shutdown / reboot,VM.PowerMgmt,/vms/{vmid},PVEVMAdmin,yes,
+Update VM/CT config (cpu/ram/disk/net),VM.Config.*,/vms/{vmid},PVEVMAdmin,yes,
+Console access (noVNC / xterm),VM.Console,/vms/{vmid},PVEVMAdmin,yes,
+Destroy (delete) VM/CT,VM.Allocate,/vms/{vmid},PVEVMAdmin,yes,
+Clone from shared template,VM.Clone + VM.Allocate,/vms/{template} + /pool/{pool},PVEVMAdmin,yes,needs PVETemplateUser on template storage
+Snapshot,VM.Snapshot,/vms/{vmid},PVEVMAdmin,yes,
+Rollback snapshot,VM.Snapshot.Rollback,/vms/{vmid},PVEVMAdmin,yes,
+# Backup and Restore
+Backup VM/CT,VM.Backup,/vms/{vmid},PVEVMAdmin,yes,also needs Datastore.AllocateSpace on backup storage
+List backups,Datastore.Audit,/storage/{pbs},PVEDatastoreUser,yes,
+Restore from backup,VM.Allocate + Datastore.AllocateSpace,/pool/{pool} + /storage/{pbs},PVEVMAdmin + PVEDatastoreUser,yes,
+# Pool Housekeeping
+Move VM between own pools,Pool.Allocate,/pool/{src} + /pool/{dst},PVEPoolAdmin,yes,e.g. active <-> offline
+Update pool comment,Pool.Allocate,/pool/{pool},PVEPoolAdmin,yes,
+# Migration
+Migrate CT/VM between nodes,VM.Migrate,/vms/{vmid},PVEVMAdmin,partial,works if token has grants on both nodes; cross-node storage may need Sys.Audit
+# Guest Agent
+Query guest agent (IP/hostname/OS),VM.Audit,/vms/{vmid},PVEVMAdmin,yes,qemu-guest-agent must be running
+Run guest agent commands,VM.GuestAgent.*,/vms/{vmid},PVEVMAdmin,yes,file read/write/exec inside guest
+# Things a tenant reasonably wants but CANNOT scope
+HA group management,Sys.Console,/,PVESysAdmin,no,requires root-level grant; no per-pool HA; must ask cluster admin
+Node CPU/memory summary,Sys.Audit,/nodes/{node},PVEAuditor,no,tenant cannot see if host is overcommitted; only per-VM metrics available
+ZFS dataset resize / quota,Sys.Modify,/nodes/{node},,no,no API; requires shell access on PVE node to run zfs set
+Download OS templates (pveam),Datastore.AllocateSpace,/storage/{storage} + /nodes/{node},PVEDatastoreAdmin,partial,tenant can download to own storage; pveam update (catalog refresh) requires Sys.Modify on node
+Scheduled backup jobs (vzdump.cron),Sys.Audit,/,PVEAuditor,no,GET /cluster/backup lists ALL cluster jobs; no per-pool filter
+Firewall rules (datacenter-level),Sys.Modify,/,,no,tenant can set VM-level firewall but not cluster/host rules
+Create additional pools,Pool.Allocate,/pool (root),PVEPoolAdmin,no,pool creation is a root-path operation; tenant gets pre-provisioned pools
+Create SDN zone or vnet,SDN.Allocate,/sdn,,no,cluster-wide config; tenant uses pre-provisioned zone

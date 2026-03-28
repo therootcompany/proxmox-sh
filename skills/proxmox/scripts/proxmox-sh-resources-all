@@ -1,0 +1,120 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-resources-all: scan all env profiles with proxmox-sh-resources
+#
+# Iterates *.env files in the config dir, runs proxmox-sh-resources for each.
+# Individual profile failures are reported but do not stop the scan.
+#
+# Usage:
+#   proxmox-sh-resources-all                          # scan ~/.config/proxmox-sh/
+#   proxmox-sh-resources-all /path/to/envs/           # scan a specific dir
+#
+# Exit codes:
+#   0 - all profiles scanned
+#   1 - no profiles found or all failed
+#   2 - some profiles failed
+
+g_script_dir="$(cd "$(dirname "$0")" && pwd)"
+g_config_dir=""
+g_ok_count=0
+g_fail_count=0
+g_skip_count=0
+
+fn_usage() {
+	echo "Usage: proxmox-sh-resources-all [<env-dir>]"
+	echo ""
+	echo "Scan all .env profiles with proxmox-sh-resources."
+	echo ""
+	echo "  <env-dir>   directory of .env files (default: ~/.config/proxmox-sh/)"
+}
+
+fn_scan_profile() {
+	b_env_file="${1}"
+	b_name="$(basename "${b_env_file}")"
+
+	echo ""
+	echo "# ========================================"
+	printf '# profile: %s\n' "${b_name}"
+	echo "# ========================================"
+
+	if ! sh "${g_script_dir}/proxmox-sh-resources" --env "${b_env_file}" 2>&1; then
+		printf 'ERROR: %s failed\n' "${b_name}" >&2
+		g_fail_count=$((g_fail_count + 1))
+		return
+	fi
+
+	g_ok_count=$((g_ok_count + 1))
+}
+
+main() {
+	case "${1:-}" in
+	--help | -help | help)
+		fn_usage
+		return 0
+		;;
+	-* | ?*)
+		if test -d "${1}"; then
+			g_config_dir="${1}"
+		else
+			echo "Unknown argument: ${1}" >&2
+			echo ""
+			fn_usage >&2
+			return 1
+		fi
+		;;
+	esac
+
+	if test -z "${g_config_dir}"; then
+		g_config_dir=~/.config/proxmox-sh
+	fi
+
+	if ! test -d "${g_config_dir}"; then
+		echo "ERROR: directory not found: ${g_config_dir}" >&2
+		return 1
+	fi
+
+	echo "# proxmox-sh-resources-all"
+	printf 'config_dir\t%s\n' "${g_config_dir}"
+
+	b_profile_count=0
+	for b_env in "${g_config_dir}"/*.env; do
+		b_name="$(basename "${b_env}")"
+		if test "${b_name}" = "*.env"; then
+			echo "ERROR: no .env files found in ${g_config_dir}" >&2
+			return 1
+		fi
+		case "${b_name}" in
+		current.env | example.env)
+			g_skip_count=$((g_skip_count + 1))
+			continue
+			;;
+		esac
+		b_profile_count=$((b_profile_count + 1))
+		fn_scan_profile "${b_env}"
+	done
+
+	if test "${b_profile_count}" -eq 0; then
+		echo "ERROR: no profiles found in ${g_config_dir}" >&2
+		return 1
+	fi
+
+	# Summary
+	echo ""
+	echo "# summary"
+	printf 'profiles\t%s\n' "${b_profile_count}"
+	printf 'ok\t%s\n' "${g_ok_count}"
+	printf 'failed\t%s\n' "${g_fail_count}"
+	printf 'skipped\t%s\n' "${g_skip_count}"
+
+	if test "${g_ok_count}" -eq 0; then
+		return 1
+	fi
+	if test "${g_fail_count}" -gt 0; then
+		return 2
+	fi
+	return 0
+}
+
+main "$@"

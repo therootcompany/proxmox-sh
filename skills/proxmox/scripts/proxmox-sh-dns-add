@@ -1,0 +1,235 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-dns-add: create DNS records for a Proxmox VM friendly domain
+#
+# Auto-detects subdomain vs apex domain and creates the right records:
+#   - Subdomain: CNAME -> tls-<ip>.<DIRECT_IP_DOMAIN>
+#   - Apex: A record + SRV record (with RFC 2782 target format)
+#
+# Usage:
+#   proxmox-sh-dns-add <friendly-domain> <direct-ip-domain>
+#   proxmox-sh-dns-add dev-209.example.com tls-10-11-4-209.vms.example.com
+#   proxmox-sh-dns-add example.com tls-10-11-4-209.vms.example.com --apex
+#
+# Options:
+#   --apex    Force apex domain treatment (for ccTLDs like example.co.uk)
+#
+# Exit codes:
+#   0 - records created
+#   1 - missing args or domainpanel not available
+#
+# AGENT: Run this after proxmox-create and DNS domain selection.
+#   On exit 1 with "domainpanel not available", ask the user for their
+#   DNS host and API token, then create the records via curl.
+#   On exit 1 with "zone not managed", the user's domain isn't configured
+#   in domainpanel -- ask which DNS provider manages it.
+#   On success, pass the friendly domain to proxmox-sh-ssh-wait as arg 2.
+
+g_apex=false
+
+fn_usage() {
+	echo "Usage: proxmox-sh-dns-add <friendly-domain> <direct-ip-domain> [--apex]"
+	echo ""
+	echo "Create DNS records (CNAME for subdomains, A+SRV for apex)."
+	echo "  --apex    Force apex domain treatment"
+}
+
+fn_is_apex() {
+	a_domain="${1}"
+
+	if "${g_apex}"; then
+		return 0
+	fi
+
+	# Count dots: example.com = 1 dot = apex, app.example.com = 2+ = subdomain
+	b_dots="$(echo "${a_domain}" | tr -cd '.' | wc -c | tr -d ' ')"
+	if test "${b_dots}" -le 1; then
+		return 0
+	fi
+
+	return 1
+}
+
+fn_extract_ip() {
+	# tls-10-11-4-209.vms.example.com -> 10.11.4.209
+	a_direct="${1}"
+	echo "${a_direct}" | sed 's;^[a-z]*-;;' | sed 's;\..*;;' | tr '-' '.'
+}
+
+fn_print_context() {
+	a_friendly="${1}"
+	a_direct="${2}"
+
+	echo "# dns-add"
+	printf 'friendly\t%s\n' "${a_friendly}"
+	printf 'direct\t%s\n' "${a_direct}"
+
+	b_ip="$(fn_extract_ip "${a_direct}")"
+	printf 'ip\t%s\n' "${b_ip}"
+
+	# Detection
+	if fn_is_apex "${a_friendly}"; then
+		printf 'detect\tapex\n'
+		echo "# AGENT: apex domain detected. Will create A + SRV records."
+		echo "# AGENT: if this is wrong (e.g. subdomain of a ccTLD), omit --apex and retry."
+	else
+		printf 'detect\tsubdomain\n'
+		echo "# AGENT: subdomain detected. Will create a CNAME record."
+		echo "# AGENT: if this is actually an apex domain (e.g. example.co.uk), rerun with --apex."
+	fi
+
+	# Domainpanel status
+	if test -d ~/Agents/domainpanel; then
+		printf 'domainpanel\tavailable\n'
+
+		# List managed zones so agent knows which domains it can create records for
+		b_zones="$(cd ~/Agents/domainpanel && go run ./cmd/domainpanel/ -records -tsv 2>/dev/null \
+			| cut -f1 | sort -u | grep -v '^zone$')" || true
+		if test -n "${b_zones}"; then
+			printf 'zones\t%s\n' "$(echo "${b_zones}" | tr '\n' ',' | sed 's/,$//')"
+
+			# Check if friendly domain matches a managed zone
+			b_matched=false
+			for b_zone in ${b_zones}; do
+				case "${a_friendly}" in
+				"${b_zone}" | *".${b_zone}")
+					printf 'zone_match\t%s\n' "${b_zone}"
+					echo "# AGENT: domain is in managed zone '${b_zone}'. Records can be created automatically."
+					b_matched=true
+					break
+					;;
+				esac
+			done
+			if ! "${b_matched}"; then
+				printf 'zone_match\tnone\n'
+				echo "# AGENT: domain is NOT in any managed zone. domainpanel cannot create these records."
+				echo "# AGENT: ask the user which DNS provider manages this domain and for an API token."
+				echo "# AGENT: alternatively, the user can pick a domain from the managed zones above."
+			fi
+		fi
+	else
+		printf 'domainpanel\tnot available\n'
+		echo "# AGENT: domainpanel is not installed. Ask the user for their DNS"
+		echo "# AGENT: host/registrar and an API token, then create records via curl."
+	fi
+
+	echo ""
+}
+
+fn_print_manual() {
+	a_friendly="${1}"
+	a_direct="${2}"
+
+	echo "# manual-dns"
+	echo "# AGENT: create these records using the DNS provider's API (curl)."
+	echo "# AGENT: you will need the provider name and an API token from the user."
+	if fn_is_apex "${a_friendly}"; then
+		b_ip="$(fn_extract_ip "${a_direct}")"
+		echo "# Two records needed for apex domain:"
+		printf 'A\t%s\t%s\n' "${a_friendly}" "${b_ip}"
+		printf 'SRV\t_http._tcp.%s\t10 1 3080 %s.%s\n' "${a_friendly}" "${a_direct}" "${a_friendly}"
+		echo "# AGENT: SRV target appends the apex domain for RFC 2782 compliance."
+		echo "# AGENT: port 3080 is required (TLS Router pre-defined port for HTTP)."
+	else
+		echo "# One record needed for subdomain:"
+		printf 'CNAME\t%s\t%s\n' "${a_friendly}" "${a_direct}"
+	fi
+}
+
+main() {
+	b_friendly=""
+	b_direct=""
+
+	while test -n "${1:-}"; do
+		case "${1}" in
+		--apex)
+			g_apex=true
+			;;
+		--help | -help | help)
+			fn_usage
+			return 0
+			;;
+		-*)
+			echo "Unknown flag: ${1}" >&2
+			fn_usage >&2
+			return 1
+			;;
+		*)
+			if test -z "${b_friendly}"; then
+				b_friendly="${1}"
+			elif test -z "${b_direct}"; then
+				b_direct="${1}"
+			else
+				echo "ERROR: unexpected argument: ${1}" >&2
+				fn_usage >&2
+				return 1
+			fi
+			;;
+		esac
+		shift
+	done
+
+	if test -z "${b_friendly}" || test -z "${b_direct}"; then
+		echo "ERROR: friendly-domain and direct-ip-domain required" >&2
+		echo ""
+		fn_usage >&2
+		return 1
+	fi
+
+	# Print context for the agent
+	fn_print_context "${b_friendly}" "${b_direct}"
+
+	# Check domainpanel (context already printed above with agent hints)
+	if ! test -d ~/Agents/domainpanel; then
+		fn_print_manual "${b_friendly}" "${b_direct}"
+		return 1
+	fi
+
+	# Create records
+	if fn_is_apex "${b_friendly}"; then
+		b_ip="$(fn_extract_ip "${b_direct}")"
+
+		# A record
+		echo "# creating A record..."
+		cd ~/Agents/domainpanel
+		if ! go run ./cmd/domainpanel/ -create-host "${b_friendly}" \
+			-type A \
+			-data "${b_ip}" 2>&1; then
+			echo "ERROR: failed to create A record" >&2
+			fn_print_manual "${b_friendly}" "${b_direct}"
+			return 1
+		fi
+
+		# SRV record (target includes apex suffix for RFC 2782 compliance)
+		b_srv_target="${b_direct}.${b_friendly}"
+		echo "# creating SRV record..."
+		if ! go run ./cmd/domainpanel/ -create-host "_http._tcp.${b_friendly}" \
+			-type SRV \
+			-data "10 1 3080 ${b_srv_target}" 2>&1; then
+			echo "ERROR: failed to create SRV record" >&2
+			fn_print_manual "${b_friendly}" "${b_direct}"
+			return 1
+		fi
+
+		printf 'created\tA\t%s\t%s\n' "${b_friendly}" "${b_ip}"
+		printf 'created\tSRV\t_http._tcp.%s\t10 1 3080 %s\n' "${b_friendly}" "${b_srv_target}"
+	else
+		echo "# creating CNAME record..."
+		cd ~/Agents/domainpanel
+		if ! go run ./cmd/domainpanel/ -create-host "${b_friendly}" \
+			-type CNAME \
+			-data "${b_direct}" 2>&1; then
+			echo "ERROR: failed to create CNAME record" >&2
+			fn_print_manual "${b_friendly}" "${b_direct}"
+			return 1
+		fi
+
+		printf 'created\tCNAME\t%s\t%s\n' "${b_friendly}" "${b_direct}"
+	fi
+
+	echo "# OK"
+}
+
+main "$@"

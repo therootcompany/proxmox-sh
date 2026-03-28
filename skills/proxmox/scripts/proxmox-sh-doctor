@@ -1,0 +1,338 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-doctor: validate proxmox-sh environment for agent use
+#
+# Output format: structured sections with key=value and TSV for tables.
+# Errors and warnings prefixed with ERROR: and WARN: for easy grep.
+# Colored pass/fail summary at the end for human readability.
+#
+# Exit codes:
+#   0 - all checks passed
+#   1 - fatal: missing dependency or broken env
+#   2 - warning: non-fatal issue
+#
+# AGENT: On success (exit 0), proceed to the next startup step silently.
+#   On warnings (exit 2), proceed but mention any WARNs that affect the task.
+#   On failure (exit 1), tell the user which 4 values are needed:
+#     PROXMOX_HOST, PROXMOX_TOKEN_ID, PROXMOX_TOKEN_SECRET, DIRECT_IP_DOMAIN
+#   Offer to create an env file. Don't dump raw error output.
+#   sclient and ssh-pubkey are WARNs, not blockers -- SSH will still work
+#   without them for most setups but TLS-tunneled SSH won't.
+
+g_exit_code=0
+g_ok_count=0
+g_warn_count=0
+g_err_count=0
+
+fn_ok() {
+	g_ok_count=$((g_ok_count + 1))
+	printf 'OK: %s\n' "$1"
+}
+
+fn_warn() {
+	g_warn_count=$((g_warn_count + 1))
+	if test "${g_exit_code}" -lt 2; then
+		g_exit_code=2
+	fi
+	printf 'WARN: %s\n' "$1" >&2
+}
+
+fn_err() {
+	g_err_count=$((g_err_count + 1))
+	g_exit_code=1
+	printf 'ERROR: %s\n' "$1" >&2
+}
+
+# ----------------------------------------
+# Dependencies
+# ----------------------------------------
+fn_check_deps() {
+	echo ""
+	echo "# deps"
+
+	for b_cmd in webi go jq curl sclient ssh-pubkey; do
+		if command -v "${b_cmd}" >/dev/null 2>&1; then
+			b_ver=""
+			case "${b_cmd}" in
+			go) b_ver="$(go version | cut -d' ' -f3)" ;;
+			esac
+			if test -n "${b_ver}"; then
+				printf '%s\t%s\n' "${b_cmd}" "${b_ver}"
+			else
+				printf '%s\tok\n' "${b_cmd}"
+			fi
+		else
+			case "${b_cmd}" in
+			sclient | ssh-pubkey) fn_warn "${b_cmd} not installed (webi ${b_cmd})" ;;
+			webi) fn_warn "${b_cmd} not installed (curl https://webi.sh | sh)" ;;
+			*) fn_err "${b_cmd} not installed (webi ${b_cmd})" ;;
+			esac
+		fi
+	done
+}
+
+# ----------------------------------------
+# proxmox-sh installation
+# ----------------------------------------
+fn_check_install() {
+	echo ""
+	echo "# install"
+
+	if ! test -d ~/.local/opt/proxmox-sh/; then
+		fn_err "proxmox-sh not installed at ~/.local/opt/proxmox-sh/"
+		echo "fix: git clone https://github.com/therootcompany/proxmox-sh.git ~/.local/opt/proxmox-sh"
+		return
+	fi
+	fn_ok "proxmox-sh installed"
+
+	for b_cmd in proxmox-create env-switch; do
+		if command -v "${b_cmd}" >/dev/null 2>&1; then
+			printf '%s\tin-path\n' "${b_cmd}"
+		else
+			fn_warn "${b_cmd} not in PATH (pathman add ~/.local/opt/proxmox-sh/bin)"
+		fi
+	done
+
+	# shellcheck disable=SC2088
+	if test -d ~/.config/proxmox-sh/; then
+		printf 'config-dir\t~/.config/proxmox-sh/\n'
+	else
+		fn_warn "~/.config/proxmox-sh/ missing (run proxmox-sh-init)"
+	fi
+}
+
+# ----------------------------------------
+# Environment files
+# ----------------------------------------
+fn_check_env() {
+	echo ""
+	echo "# env"
+
+	if ! test -d ~/.config/proxmox-sh/; then
+		# shellcheck disable=SC2088
+		fn_err "~/.config/proxmox-sh/ missing"
+		return
+	fi
+
+	# List profiles
+	echo ""
+	echo "# profiles"
+	b_profile_count=0
+	for b_env in ~/.config/proxmox-sh/*.env; do
+		b_name="$(basename "${b_env}")"
+		if test "${b_name}" = "*.env"; then
+			fn_warn "no .env files found"
+			return
+		fi
+		case "${b_name}" in
+		current.env | example.env) continue ;;
+		esac
+		b_profile_count=$((b_profile_count + 1))
+		echo "${b_name}"
+	done
+
+	if test "${b_profile_count}" -eq 0; then
+		fn_warn "no profiles found"
+		return
+	fi
+
+	# Check current.env
+	if ! test -e ~/.config/proxmox-sh/current.env; then
+		fn_warn "no current.env symlink (run: env-switch proxmox-sh <profile>)"
+		return
+	fi
+	if ! test -L ~/.config/proxmox-sh/current.env; then
+		fn_warn "current.env is a file, not a symlink"
+		return
+	fi
+
+	# shellcheck disable=SC2012
+	b_current_target="$(ls -l ~/.config/proxmox-sh/current.env | sed 's;.*/;;')"
+
+	echo ""
+	echo "# current-env"
+	printf 'profile\t%s\n' "${b_current_target}"
+
+	# Source and dump config
+	# shellcheck disable=SC1090
+	(
+		. ~/.config/proxmox-sh/current.env || true
+
+		printf 'PROXMOX_HOST\t%s\n' "${PROXMOX_HOST:-}"
+		printf 'PROXMOX_TARGET_NODE\t%s\n' "${PROXMOX_TARGET_NODE:-}"
+		printf 'PROXMOX_ID_PREFIX\t%s\n' "${PROXMOX_ID_PREFIX:-}"
+		printf 'PROXMOX_RESOURCE_POOL\t%s\n' "${PROXMOX_RESOURCE_POOL:-}"
+		if test -n "${PROXMOX_VNET:-}"; then
+			printf 'PROXMOX_VNET\t%s\n' "${PROXMOX_VNET}"
+		elif test -n "${PROXMOX_BRIDGE:-}"; then
+			printf 'PROXMOX_BRIDGE\t%s\n' "${PROXMOX_BRIDGE}"
+		fi
+		printf 'PROXMOX_SEARCH_DOMAIN\t%s\n' "${PROXMOX_SEARCH_DOMAIN:-}"
+		printf 'DIRECT_IP_DOMAIN\t%s\n' "${DIRECT_IP_DOMAIN:-}"
+		printf 'PROXMOX_TEMPLATE_DEFAULT\t%s\n' "${PROXMOX_TEMPLATE_DEFAULT:-}"
+		printf 'PROXMOX_TEMPLATE_STORAGE\t%s\n' "${PROXMOX_TEMPLATE_STORAGE:-}"
+
+		# Validate required
+		for b_var in PROXMOX_HOST PROXMOX_TOKEN_ID PROXMOX_TOKEN_SECRET; do
+			# shellcheck disable=SC2154
+			eval "b_val=\"\${${b_var}:-}\""
+			if test -z "${b_val}"; then
+				echo "ERROR: ${b_var} not set" >&2
+			fi
+		done
+		if test -n "${PROXMOX_TOKEN_ID:-}" && test -n "${PROXMOX_TOKEN_SECRET:-}"; then
+			echo "OK: credentials set"
+		fi
+
+		# Direct-IP domain
+		if test -z "${DIRECT_IP_DOMAIN:-}"; then
+			echo "ERROR: DIRECT_IP_DOMAIN not set" >&2
+		else
+			echo "OK: DIRECT_IP_DOMAIN=${DIRECT_IP_DOMAIN}"
+		fi
+	)
+}
+
+# ----------------------------------------
+# API connectivity
+# ----------------------------------------
+fn_check_api() {
+	echo ""
+	echo "# api"
+
+	if ! test -e ~/.config/proxmox-sh/current.env; then
+		fn_warn "skipping - no current.env"
+		return
+	fi
+
+	# shellcheck disable=SC1090
+	. ~/.config/proxmox-sh/current.env || true
+
+	if test -z "${PROXMOX_HOST:-}" ||
+		test -z "${PROXMOX_TOKEN_ID:-}" ||
+		test -z "${PROXMOX_TOKEN_SECRET:-}"; then
+		fn_warn "skipping - missing credentials"
+		return
+	fi
+
+	b_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
+	b_base_url="https://${PROXMOX_HOST}/api2/json"
+	b_curl="curl --max-time 10 --fail-with-body -sSL"
+
+	if ! b_version="$(${b_curl} -H "${b_auth}" "${b_base_url}/version" 2>&1)"; then
+		fn_err "cannot reach ${PROXMOX_HOST}"
+		echo "${b_version}" >&2
+		return
+	fi
+
+	b_pve_version="$(echo "${b_version}" | jq -r '.data.version // "unknown"')"
+	printf 'pve_version\t%s\n' "${b_pve_version}"
+	fn_ok "API reachable"
+
+	# Permissions
+	fn_check_permissions "${b_curl}" "${b_auth}" "${b_base_url}"
+}
+
+# ----------------------------------------
+# Token permissions
+# ----------------------------------------
+fn_check_permissions() {
+	b_curl="${1}"
+	b_auth="${2}"
+	b_base_url="${3}"
+
+	echo ""
+	echo "# permissions"
+
+	if ! b_perms="$(${b_curl} -H "${b_auth}" "${b_base_url}/access/permissions" 2>&1)"; then
+		fn_warn "cannot query permissions"
+		return
+	fi
+
+	# TSV: path \t perm1,perm2,...
+	echo "${b_perms}" | jq -r '
+		.data | to_entries[]
+		| select(.value | to_entries | map(select(.value == 1)) | length > 0)
+		| [.key, ([.value | to_entries[] | select(.value == 1) | .key] | sort | join(","))]
+		| @tsv
+	' | sort
+
+	# Summary checks
+	b_granted="$(echo "${b_perms}" | jq '[.data | to_entries[] | select(.value | to_entries | map(select(.value == 1)) | length > 0)] | length')"
+	printf 'granted_paths\t%s\n' "${b_granted}"
+
+	echo ""
+	echo "# permission-checks"
+	# Check key privileges exist somewhere
+	for b_check in Pool.Allocate VM.Allocate Datastore.AllocateSpace SDN.Use; do
+		b_has="$(echo "${b_perms}" | jq --arg p "${b_check}" '[.data | to_entries[] | select(.value[$p] == 1)] | length')"
+		if test "${b_has}" -gt 0; then
+			fn_ok "${b_check} granted (${b_has} paths)"
+		else
+			fn_warn "${b_check} not granted"
+		fi
+	done
+}
+
+# ----------------------------------------
+# Summary (colored for humans)
+# ----------------------------------------
+fn_summary() {
+	echo ""
+
+	b_green=""
+	b_yellow=""
+	b_red=""
+	b_reset=""
+	# Only colorize if stderr is a terminal
+	if test -t 2; then
+		b_green='\033[32m'
+		b_yellow='\033[33m'
+		b_red='\033[31m'
+		b_reset='\033[0m'
+	fi
+
+	if test "${g_exit_code}" -eq 0; then
+		printf "${b_green}PASS${b_reset}  %s ok, %s warnings, %s errors\n" "${g_ok_count}" "${g_warn_count}" "${g_err_count}" >&2
+	elif test "${g_exit_code}" -eq 2; then
+		printf "${b_yellow}WARN${b_reset}  %s ok, %s warnings, %s errors\n" "${g_ok_count}" "${g_warn_count}" "${g_err_count}" >&2
+	else
+		printf "${b_red}FAIL${b_reset}  %s ok, %s warnings, %s errors\n" "${g_ok_count}" "${g_warn_count}" "${g_err_count}" >&2
+	fi
+}
+
+fn_usage() {
+	echo "Usage: proxmox-sh-doctor"
+	echo ""
+	echo "Validates proxmox-sh environment: deps, install, env files, API, permissions."
+	echo "Exit codes: 0=pass, 1=error, 2=warning"
+}
+
+main() {
+	case "${1:-}" in
+	--help | -help | help)
+		fn_usage
+		return 0
+		;;
+	-* | ?*)
+		echo "Unknown argument: ${1}" >&2
+		echo ""
+		fn_usage >&2
+		return 1
+		;;
+	esac
+
+	echo "# proxmox-sh-doctor"
+
+	fn_check_deps
+	fn_check_install
+	fn_check_env
+	fn_check_api
+	fn_summary
+
+	return "${g_exit_code}"
+}
+
+main "$@"

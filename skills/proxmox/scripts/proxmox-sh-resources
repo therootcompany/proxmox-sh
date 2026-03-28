@@ -1,0 +1,476 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-resources: list Proxmox infrastructure for agent use
+#
+# Output format: # section headers, TSV data rows, OK:/WARN:/ERROR: status lines.
+# Designed for agent consumption; colored summary at the end for humans.
+#
+# Usage:
+#   proxmox-sh-resources            # fast: 3 API calls (permissions + VMs)
+#   proxmox-sh-resources --detail   # full: 8+ API calls, all details
+#
+# Exit codes:
+#   0 - listing completed
+#   1 - cannot connect or missing env
+#
+# AGENT: Don't dump the full output to the user. Summarize:
+#   - N VMs running / N stopped
+#   - Available pools (highlight *-active and *-dev)
+#   - Any warnings or errors
+#   Use pool list to validate PROXMOX_RESOURCE_POOL before create.
+#   If the env pool isn't in the list, tell the user and pick from available pools.
+#   On 403 errors: likely a token permission issue. Read references/minimum-permissions.csv.
+
+g_exit_code=0
+g_detail=false
+g_env_file=""
+
+fn_ok() {
+	printf 'OK: %s\n' "$1"
+}
+
+fn_warn() {
+	printf 'WARN: %s\n' "$1" >&2
+}
+
+fn_err() {
+	printf 'ERROR: %s\n' "$1" >&2
+	g_exit_code=1
+}
+
+# ----------------------------------------
+# Load env and connect
+# ----------------------------------------
+fn_init() {
+	if test -n "${g_env_file}"; then
+		if ! test -e "${g_env_file}"; then
+			fn_err "env file not found: ${g_env_file}"
+			return 1
+		fi
+	else
+		if ! test -e ~/.config/proxmox-sh/current.env; then
+			fn_err "no current.env - run proxmox-sh-doctor first"
+			return 1
+		fi
+		g_env_file=~/.config/proxmox-sh/current.env
+	fi
+
+	# shellcheck disable=SC1090
+	. "${g_env_file}" || true
+
+	if test -z "${PROXMOX_HOST:-}" ||
+		test -z "${PROXMOX_TOKEN_ID:-}" ||
+		test -z "${PROXMOX_TOKEN_SECRET:-}"; then
+		fn_err "missing HOST/TOKEN vars - run proxmox-sh-doctor first"
+		return 1
+	fi
+
+	g_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
+	g_base_url="https://${PROXMOX_HOST}/api2/json"
+	g_curl="curl --max-time 10 --fail-with-body -sSL"
+
+	if ! b_version="$(${g_curl} -H "${g_auth}" "${g_base_url}/version" 2>&1)"; then
+		fn_err "cannot reach ${PROXMOX_HOST}"
+		echo "${b_version}" >&2
+		return 1
+	fi
+
+	b_pve_version="$(echo "${b_version}" | jq -r '.data.version // "unknown"')"
+
+	echo "# proxmox-sh-resources"
+	b_mode="fast"
+	if test "${g_detail}" = "true"; then
+		b_mode="detail"
+	fi
+	b_profile="$(basename "${g_env_file}")"
+	printf 'mode\t%s\n' "${b_mode}"
+	printf 'profile\t%s\n' "${b_profile}"
+	printf 'host\t%s\n' "${PROXMOX_HOST}"
+	printf 'pve\t%s\n' "${b_pve_version}"
+}
+
+# ========================================
+# Fast mode
+# ========================================
+fn_fast() {
+	if ! g_perms="$(${g_curl} -H "${g_auth}" "${g_base_url}/access/permissions" 2>&1)"; then
+		fn_err "cannot query permissions"
+		return 1
+	fi
+
+	g_granted="$(echo "${g_perms}" | jq '
+		# Map full permission lists to short capability flags
+		def caps:
+			. as $p |
+			(if ($p | any(startswith("VM.Allocate"))) then ["vm-alloc"] else [] end) +
+			(if ($p | any(startswith("VM.PowerMgmt"))) then ["vm-manage"] else [] end) +
+			(if ($p | any(startswith("Pool.Allocate"))) then ["pool-alloc"] else [] end) +
+			(if ($p | any(startswith("Datastore.AllocateSpace"))) then ["ds-alloc"] else [] end) +
+			(if ($p | any(startswith("Datastore.AllocateTemplate"))) then ["ds-tmpl"] else [] end) +
+			(if ($p | any(startswith("SDN.Use"))) then ["sdn-use"] else [] end) +
+			(if ($p | any(startswith("SDN.Allocate"))) then ["sdn-alloc"] else [] end) +
+			(if ($p | any(test("Audit"))) then ["audit"] else [] end) +
+			(if ($p | any(startswith("Sys."))) then ["sys"] else [] end)
+			| unique;
+		[.data | to_entries[]
+			| select(.value | to_entries | map(select(.value == 1)) | length > 0)
+			| {
+				path: .key,
+				perms: [.value | to_entries[] | select(.value == 1) | .key] | sort,
+				caps: ([.value | to_entries[] | select(.value == 1) | .key] | caps)
+			}
+		] | sort_by(.path)
+	')"
+
+	fn_fast_pools
+	fn_fast_storages
+	fn_fast_vms
+	fn_fast_sdn
+	fn_fast_nodes
+}
+
+fn_fast_pools() {
+	echo ""
+	echo "# pools"
+	echo "# AGENT: these are the pools you can use for VM creation."
+	echo "# AGENT: pick from this list, not from the env file -- the env pool may not exist."
+	echo "# AGENT: *-active pools are for running workloads, *-dev for development."
+	printf '# pool\tcapabilities\n'
+
+	b_pools="$(echo "${g_granted}" | jq -r '.[] | select(.path | startswith("/pool/")) | [(.path | ltrimstr("/pool/")), (.caps | join(","))] | @tsv')"
+	if test -z "${b_pools}"; then
+		echo "# (none)"
+		echo "# AGENT: no pools visible. The token may lack Pool.Allocate permission."
+		return
+	fi
+	echo "${b_pools}"
+
+	echo ""
+	echo "# pool-conventions"
+	for b_suffix in active dev prod offline; do
+		b_matches="$(echo "${b_pools}" | grep -c "\-${b_suffix}	" || true)"
+		if test "${b_matches}" -gt 0; then
+			printf '*-%s\t%s\n' "${b_suffix}" "${b_matches}"
+		fi
+	done
+}
+
+fn_fast_storages() {
+	echo ""
+	echo "# storages"
+	echo "# AGENT: ds-alloc = can allocate disk space, ds-tmpl = can store templates."
+	printf '# storage\tcapabilities\n'
+
+	b_storages="$(echo "${g_granted}" | jq -r '.[] | select(.path | startswith("/storage/")) | [(.path | ltrimstr("/storage/")), (.caps | join(","))] | @tsv')"
+	if test -z "${b_storages}"; then
+		echo "# (none)"
+		return
+	fi
+	echo "${b_storages}"
+}
+
+fn_fast_vms() {
+	echo ""
+	echo "# vms"
+	echo "# AGENT: summarize as 'N running, M stopped'. Only list individual VMs if the user asks."
+
+	# Always call cluster/resources for names and status
+	if ! b_resources="$(${g_curl} -H "${g_auth}" "${g_base_url}/cluster/resources?type=vm" 2>&1)"; then
+		fn_warn "cannot fetch VM details"
+		# Fall back to VMID list from permissions
+		b_all_vmids="$(echo "${g_perms}" | jq -r '[.data | to_entries[] | select(.key | startswith("/vms/")) | .key | ltrimstr("/vms/")] | sort | .[]')"
+		if test -n "${b_all_vmids}"; then
+			echo "# vmid (no details)"
+			echo "${b_all_vmids}"
+		else
+			echo "# (none)"
+		fi
+		return
+	fi
+
+	b_count="$(echo "${b_resources}" | jq '.data | length')"
+	b_running="$(echo "${b_resources}" | jq '[.data[] | select(.status == "running")] | length')"
+	b_stopped="$(echo "${b_resources}" | jq '[.data[] | select(.status == "stopped")] | length')"
+	printf 'total\t%s\n' "${b_count}"
+	printf 'running\t%s\n' "${b_running}"
+	printf 'stopped\t%s\n' "${b_stopped}"
+
+	if test "${b_count}" -eq 0; then
+		return
+	fi
+
+	echo ""
+	printf '# vmid\tname\tstatus\tnode\tpool\n'
+	echo "${b_resources}" | jq -r '
+		.data | sort_by(.vmid) | .[]
+		| [(.vmid | tostring), (.name // "unnamed"), .status, .node, (.pool // "none")]
+		| @tsv
+	'
+}
+
+fn_fast_sdn() {
+	echo ""
+	echo "# sdn-zones"
+	printf '# zone\tcapabilities\n'
+
+	b_zones="$(echo "${g_granted}" | jq -r '.[] | select(.path | startswith("/sdn/zones/")) | [(.path | ltrimstr("/sdn/zones/")), (.caps | join(","))] | @tsv')"
+	if test -z "${b_zones}"; then
+		echo "# (none)"
+	else
+		echo "${b_zones}"
+	fi
+}
+
+fn_fast_nodes() {
+	echo ""
+	echo "# nodes"
+
+	b_nodes="$(echo "${g_granted}" | jq -r '.[] | select(.path | startswith("/nodes")) | [.path, (.caps | join(","))] | @tsv')"
+	if test -z "${b_nodes}"; then
+		echo "# (none)"
+	else
+		echo "${b_nodes}"
+	fi
+	echo "# (run with --detail for CPU/memory metrics)"
+}
+
+# ========================================
+# Full mode
+# ========================================
+
+fn_list_pools() {
+	echo ""
+	echo "# pools"
+	printf '# pool\tmembers\n'
+
+	if ! b_pools="$(${g_curl} -H "${g_auth}" "${g_base_url}/pools" 2>&1)"; then
+		fn_warn "cannot list pools"
+		return
+	fi
+
+	b_pool_list="$(echo "${b_pools}" | jq -r '.data[].poolid' | sort)"
+	if test -z "${b_pool_list}"; then
+		echo "# (none)"
+		return
+	fi
+
+	echo "${b_pool_list}" | while read -r b_pool; do
+		b_member_count="$(
+			echo "${b_pools}" |
+				jq -r --arg p "${b_pool}" '.data[] | select(.poolid == $p) | (.members // []) | length'
+		)"
+		printf '%s\t%s\n' "${b_pool}" "${b_member_count}"
+	done
+
+	echo ""
+	echo "# pool-conventions"
+	for b_suffix in active dev prod offline; do
+		b_matches="$(echo "${b_pool_list}" | grep -c "\-${b_suffix}$" || true)"
+		if test "${b_matches}" -gt 0; then
+			printf '*-%s\t%s\n' "${b_suffix}" "${b_matches}"
+		fi
+	done
+}
+
+fn_list_storages() {
+	echo ""
+	echo "# storages"
+	printf '# storage\ttype\tcontent\n'
+
+	if ! b_storages="$(${g_curl} -H "${g_auth}" "${g_base_url}/storage" 2>&1)"; then
+		fn_warn "cannot list storages"
+		return
+	fi
+
+	echo "${b_storages}" | jq -r '.data | sort_by(.storage) | .[] | [.storage, .type, (.content // "n/a")] | @tsv'
+}
+
+fn_list_resources() {
+	echo ""
+	echo "# vms"
+
+	if ! b_resources="$(${g_curl} -H "${g_auth}" "${g_base_url}/cluster/resources?type=vm" 2>&1)"; then
+		fn_warn "cannot list cluster resources"
+		return
+	fi
+
+	b_count="$(echo "${b_resources}" | jq '.data | length')"
+	b_running="$(echo "${b_resources}" | jq '[.data[] | select(.status == "running")] | length')"
+	b_stopped="$(echo "${b_resources}" | jq '[.data[] | select(.status == "stopped")] | length')"
+	printf 'total\t%s\n' "${b_count}"
+	printf 'running\t%s\n' "${b_running}"
+	printf 'stopped\t%s\n' "${b_stopped}"
+
+	if test "${b_count}" -eq 0; then
+		return
+	fi
+
+	echo ""
+	printf '# vmid\tname\tstatus\tnode\tpool\n'
+	echo "${b_resources}" | jq -r '
+		.data | sort_by(.vmid) | .[]
+		| [(.vmid | tostring), (.name // "unnamed"), .status, .node, (.pool // "none")]
+		| @tsv
+	'
+}
+
+fn_list_sdn() {
+	echo ""
+	echo "# sdn-zones"
+	printf '# zone\ttype\n'
+
+	if ! b_zones="$(${g_curl} -H "${g_auth}" "${g_base_url}/cluster/sdn/zones" 2>&1)"; then
+		fn_warn "cannot list SDN zones"
+		return
+	fi
+
+	b_zone_count="$(echo "${b_zones}" | jq '.data | length')"
+	if test "${b_zone_count}" -eq 0; then
+		echo "# (none)"
+	else
+		echo "${b_zones}" | jq -r '.data | sort_by(.zone) | .[] | [.zone, .type] | @tsv'
+	fi
+
+	echo ""
+	echo "# sdn-vnets"
+	printf '# vnet\tzone\ttag\n'
+
+	if ! b_vnets="$(${g_curl} -H "${g_auth}" "${g_base_url}/cluster/sdn/vnets" 2>&1)"; then
+		fn_warn "cannot list SDN vnets"
+		return
+	fi
+
+	b_vnet_count="$(echo "${b_vnets}" | jq '.data | length')"
+	if test "${b_vnet_count}" -eq 0; then
+		echo "# (none)"
+	else
+		echo "${b_vnets}" | jq -r '.data | sort_by(.vnet) | .[] | [.vnet, .zone, (.tag // "none" | tostring)] | @tsv'
+	fi
+}
+
+fn_list_nodes() {
+	echo ""
+	echo "# nodes"
+	printf '# node\tstatus\tcpu_pct\tmem_gb\tmaxmem_gb\n'
+
+	if ! b_nodes="$(${g_curl} -H "${g_auth}" "${g_base_url}/nodes" 2>&1)"; then
+		fn_warn "cannot list nodes"
+		return
+	fi
+
+	echo "${b_nodes}" | jq -r '
+		.data | sort_by(.node) | .[]
+		| [
+			.node,
+			.status,
+			(.cpu // 0 | . * 100 | floor | tostring),
+			((.mem // 0) / 1073741824 | . * 10 | floor / 10 | tostring),
+			((.maxmem // 0) / 1073741824 | . * 10 | floor / 10 | tostring)
+		] | @tsv
+	'
+}
+
+fn_list_templates() {
+	echo ""
+	echo "# templates"
+
+	b_node="${PROXMOX_TARGET_NODE:-pve1}"
+	b_tmpl_storage="${PROXMOX_TEMPLATE_STORAGE:-}"
+
+	if test -z "${b_tmpl_storage}"; then
+		fn_warn "PROXMOX_TEMPLATE_STORAGE not set"
+		return
+	fi
+
+	printf 'storage\t%s\n' "${b_tmpl_storage}"
+	printf 'node\t%s\n' "${b_node}"
+
+	if ! b_content="$(${g_curl} -H "${g_auth}" \
+		"${g_base_url}/nodes/${b_node}/storage/${b_tmpl_storage}/content?content=vztmpl" 2>&1)"; then
+		fn_warn "cannot list templates from ${b_tmpl_storage}"
+		return
+	fi
+
+	echo ""
+	printf '# volid\tsize_mb\n'
+	echo "${b_content}" | jq -r '
+		.data | sort_by(.volid) | .[]
+		| [.volid, (.size // 0 | . / 1048576 | floor | tostring)]
+		| @tsv
+	'
+
+	if test -n "${PROXMOX_TEMPLATE_DEFAULT:-}"; then
+		b_default_match="$(echo "${b_content}" | jq -r --arg t "${PROXMOX_TEMPLATE_DEFAULT}" '
+			.data[] | select(.volid | endswith($t)) | .volid
+		')"
+		if test -n "${b_default_match}"; then
+			fn_ok "default template '${PROXMOX_TEMPLATE_DEFAULT}' found"
+		else
+			fn_warn "default template '${PROXMOX_TEMPLATE_DEFAULT}' not found"
+		fi
+	fi
+}
+
+# ----------------------------------------
+# Main
+# ----------------------------------------
+fn_usage() {
+	echo "Usage: proxmox-sh-resources [--detail] [--env <file>]"
+	echo ""
+	echo "List Proxmox infrastructure: pools, storages, VMs, SDN, nodes."
+	echo ""
+	echo "  --detail       8+ API calls: node metrics, vnet details, pool members, templates"
+	echo "  --env <file>   source this env file instead of current.env"
+}
+
+main() {
+	while test -n "${1:-}"; do
+		case "${1}" in
+		--detail)
+			g_detail=true
+			;;
+		--env)
+			shift
+			g_env_file="${1:-}"
+			if test -z "${g_env_file}"; then
+				echo "ERROR: --env requires a file path" >&2
+				echo ""
+				fn_usage >&2
+				return 1
+			fi
+			;;
+		--help | -help | help)
+			fn_usage
+			return 0
+			;;
+		*)
+			echo "Unknown flag: ${1}" >&2
+			echo ""
+			fn_usage >&2
+			return 1
+			;;
+		esac
+		shift
+	done
+
+	fn_init || return 1
+
+	if test "${g_detail}" = "true"; then
+		fn_list_pools
+		fn_list_storages
+		fn_list_resources
+		fn_list_sdn
+		fn_list_nodes
+		fn_list_templates
+	else
+		fn_fast
+	fi
+
+	echo ""
+
+	return "${g_exit_code}"
+}
+
+main "$@"

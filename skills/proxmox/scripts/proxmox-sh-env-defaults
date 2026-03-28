@@ -1,0 +1,237 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-env-defaults: suggest missing env values from API discovery
+#
+# Given a partial env file (at minimum: HOST + TOKEN), queries the API
+# to discover available resources and prints suggested values for any
+# unset variables. Does NOT modify the env file.
+#
+# Usage:
+#   proxmox-sh-env-defaults                    # uses current.env
+#   proxmox-sh-env-defaults --env <file>       # uses specific env
+#
+# Exit codes:
+#   0 - suggestions printed (may be empty if env is complete)
+#   1 - cannot connect or missing credentials
+
+g_env_file=""
+
+fn_usage() {
+	echo "Usage: proxmox-sh-env-defaults [--env <file>]"
+	echo ""
+	echo "Suggest values for missing env variables based on API discovery."
+}
+
+main() {
+	while test -n "${1:-}"; do
+		case "${1}" in
+		--env)
+			shift
+			g_env_file="${1:-}"
+			if test -z "${g_env_file}"; then
+				echo "ERROR: --env requires a file path" >&2
+				return 1
+			fi
+			;;
+		--help | -help | help)
+			fn_usage
+			return 0
+			;;
+		*)
+			echo "Unknown argument: ${1}" >&2
+			echo ""
+			fn_usage >&2
+			return 1
+			;;
+		esac
+		shift
+	done
+
+	if test -z "${g_env_file}"; then
+		if ! test -e ~/.config/proxmox-sh/current.env; then
+			echo "ERROR: no current.env and no --env flag" >&2
+			return 1
+		fi
+		g_env_file=~/.config/proxmox-sh/current.env
+	fi
+
+	# shellcheck disable=SC1090
+	. "${g_env_file}" || true
+
+	if test -z "${PROXMOX_HOST:-}" ||
+		test -z "${PROXMOX_TOKEN_ID:-}" ||
+		test -z "${PROXMOX_TOKEN_SECRET:-}"; then
+		echo "ERROR: need at least PROXMOX_HOST, PROXMOX_TOKEN_ID, PROXMOX_TOKEN_SECRET" >&2
+		return 1
+	fi
+
+	b_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
+	b_base_url="https://${PROXMOX_HOST}/api2/json"
+	b_curl="curl --max-time 10 --fail-with-body -sSL"
+
+	# Test connectivity
+	if ! ${b_curl} -H "${b_auth}" "${b_base_url}/version" >/dev/null 2>&1; then
+		echo "ERROR: cannot reach ${PROXMOX_HOST}" >&2
+		return 1
+	fi
+
+	# Fetch permissions (single call, covers pools/storages/sdn/nodes)
+	if ! b_perms="$(${b_curl} -H "${b_auth}" "${b_base_url}/access/permissions" 2>&1)"; then
+		echo "ERROR: cannot query permissions" >&2
+		return 1
+	fi
+
+	echo "# env-defaults"
+	printf 'env_file\t%s\n' "$(basename "${g_env_file}")"
+
+	b_suggest_count=0
+
+	# --- PROXMOX_TARGET_NODE ---
+	if test -z "${PROXMOX_TARGET_NODE:-}"; then
+		b_node="$(echo "${b_perms}" | jq -r '
+			[.data | to_entries[] | select(.key | startswith("/nodes/"))
+			| .key | ltrimstr("/nodes/") | split("/")[0]]
+			| unique | first // empty
+		')"
+		if test -z "${b_node}"; then
+			# Fall back to cluster/nodes
+			b_node="$(${b_curl} -H "${b_auth}" "${b_base_url}/nodes" 2>/dev/null |
+				jq -r '.data | sort_by(.node) | .[0].node // empty')" || true
+		fi
+		if test -n "${b_node}"; then
+			fn_suggest "PROXMOX_TARGET_NODE" "${b_node}" "first node visible"
+		fi
+	fi
+
+	# --- PROXMOX_RESOURCE_POOL ---
+	if test -z "${PROXMOX_RESOURCE_POOL:-}"; then
+		# Prefer *-active, then *-dev, then first pool with Pool.Allocate
+		b_pools="$(echo "${b_perms}" | jq -r '
+			[.data | to_entries[]
+			| select(.key | startswith("/pool/"))
+			| select(.value["Pool.Allocate"] == 1)
+			| .key | ltrimstr("/pool/")]
+			| sort | .[]
+		')"
+		b_pool=""
+		if test -n "${b_pools}"; then
+			b_pool="$(echo "${b_pools}" | grep -m1 '\-active$' || true)"
+			if test -z "${b_pool}"; then
+				b_pool="$(echo "${b_pools}" | grep -m1 '\-dev$' || true)"
+			fi
+			if test -z "${b_pool}"; then
+				b_pool="$(echo "${b_pools}" | head -1)"
+			fi
+		fi
+		if test -n "${b_pool}"; then
+			fn_suggest "PROXMOX_RESOURCE_POOL" "${b_pool}" "pool with Pool.Allocate"
+		fi
+	fi
+
+	# --- PROXMOX_VNET or PROXMOX_BRIDGE ---
+	if test -z "${PROXMOX_VNET:-}" && test -z "${PROXMOX_BRIDGE:-}"; then
+		b_zone="$(echo "${b_perms}" | jq -r '
+			[.data | to_entries[]
+			| select(.key | startswith("/sdn/zones/"))
+			| select(.value["SDN.Use"] == 1)
+			| .key | ltrimstr("/sdn/zones/") | split("/")[0]]
+			| unique | first // empty
+		')"
+		if test -n "${b_zone}"; then
+			# Try to find a vnet in this zone
+			b_vnet="$(${b_curl} -H "${b_auth}" "${b_base_url}/cluster/sdn/vnets" 2>/dev/null |
+				jq -r --arg z "${b_zone}" '.data[] | select(.zone == $z) | .vnet' | head -1)" || true
+			if test -n "${b_vnet}"; then
+				fn_suggest "PROXMOX_VNET" "${b_vnet}" "first vnet in zone ${b_zone}"
+			fi
+		fi
+	fi
+
+	# --- PROXMOX_TEMPLATE_STORAGE ---
+	if test -z "${PROXMOX_TEMPLATE_STORAGE:-}"; then
+		b_tmpl_storage="$(echo "${b_perms}" | jq -r '
+			[.data | to_entries[]
+			| select(.key | startswith("/storage/"))
+			| select(.value["Datastore.Audit"] == 1 or .value["Datastore.AllocateSpace"] == 1)
+			| .key | ltrimstr("/storage/")]
+			| sort | .[]
+		')"
+		if test -n "${b_tmpl_storage}"; then
+			# Check each for vztmpl content
+			b_found_storage=""
+			b_target_node="${PROXMOX_TARGET_NODE:-${b_node:-pve1}}"
+			for b_stor in ${b_tmpl_storage}; do
+				b_has_tmpl="$(${b_curl} -H "${b_auth}" \
+					"${b_base_url}/nodes/${b_target_node}/storage/${b_stor}/content?content=vztmpl" 2>/dev/null |
+					jq '.data | length' 2>/dev/null)" || true
+				if test -n "${b_has_tmpl}" && test "${b_has_tmpl}" -gt 0; then
+					b_found_storage="${b_stor}"
+					break
+				fi
+			done
+			if test -n "${b_found_storage}"; then
+				fn_suggest "PROXMOX_TEMPLATE_STORAGE" "${b_found_storage}" "has vztmpl content"
+			fi
+		fi
+	fi
+
+	# --- PROXMOX_TEMPLATE_DEFAULT ---
+	if test -z "${PROXMOX_TEMPLATE_DEFAULT:-}"; then
+		b_tmpl_stor="${PROXMOX_TEMPLATE_STORAGE:-${b_found_storage:-}}"
+		b_tmpl_node="${PROXMOX_TARGET_NODE:-${b_node:-pve1}}"
+		if test -n "${b_tmpl_stor}"; then
+			# Prefer ubuntu bnna, then ubuntu standard, then first template
+			b_templates="$(${b_curl} -H "${b_auth}" \
+				"${b_base_url}/nodes/${b_tmpl_node}/storage/${b_tmpl_stor}/content?content=vztmpl" 2>/dev/null |
+				jq -r '.data[].volid' | sort)" || true
+			if test -n "${b_templates}"; then
+				b_tmpl="$(echo "${b_templates}" | grep -m1 'ubuntu.*bnna' || true)"
+				if test -z "${b_tmpl}"; then
+					b_tmpl="$(echo "${b_templates}" | grep -m1 'ubuntu' || true)"
+				fi
+				if test -z "${b_tmpl}"; then
+					b_tmpl="$(echo "${b_templates}" | head -1)"
+				fi
+				if test -n "${b_tmpl}"; then
+					fn_suggest "PROXMOX_TEMPLATE_DEFAULT" "${b_tmpl}" "template preference: bnna > ubuntu > first"
+				fi
+			fi
+		fi
+	fi
+
+	# --- PROXMOX_ID_PREFIX ---
+	if test -z "${PROXMOX_ID_PREFIX:-}"; then
+		# Try to infer from existing VMs in the chosen pool
+		b_target_pool="${PROXMOX_RESOURCE_POOL:-${b_pool:-}}"
+		if test -n "${b_target_pool}"; then
+			b_prefix="$(${b_curl} -H "${b_auth}" "${b_base_url}/cluster/resources?type=vm" 2>/dev/null |
+				jq -r --arg p "${b_target_pool}" '
+					[.data[] | select(.pool == $p) | .vmid | tostring | .[:-3]]
+					| unique | first // empty
+				')" || true
+			if test -n "${b_prefix}"; then
+				fn_suggest "PROXMOX_ID_PREFIX" "${b_prefix}" "inferred from existing VMs in ${b_target_pool}"
+			fi
+		fi
+	fi
+
+	# Summary
+	echo ""
+	if test "${b_suggest_count}" -eq 0; then
+		echo "OK: env file appears complete"
+	else
+		printf 'suggestions\t%s\n' "${b_suggest_count}"
+	fi
+}
+
+fn_suggest() {
+	b_var="${1}"
+	b_val="${2}"
+	b_reason="${3}"
+	b_suggest_count=$((b_suggest_count + 1))
+	printf 'SUGGEST\t%s\t%s\t# %s\n' "${b_var}" "${b_val}" "${b_reason}"
+}
+
+main "$@"

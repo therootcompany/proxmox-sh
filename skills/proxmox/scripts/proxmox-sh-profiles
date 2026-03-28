@@ -1,0 +1,106 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-profiles: list env profiles for agent selection
+#
+# Output: numbered list of profiles with host, pools, and current marker.
+# Designed for the agent to present to the user as a pick list.
+#
+# Usage:
+#   proxmox-sh-profiles
+#
+# Exit codes:
+#   0 - profiles listed
+#   1 - no config dir
+#
+# AGENT: Present as a numbered pick list. Highlight which is [current].
+#   If only one profile exists, confirm it rather than asking.
+#   After selection, switch with: env-switch proxmox-sh <profile-name>
+
+fn_usage() {
+	echo "Usage: proxmox-sh-profiles"
+	echo ""
+	echo "List env profiles with host and pool summary."
+}
+
+main() {
+	case "${1:-}" in
+	--help | -help | help)
+		fn_usage
+		return 0
+		;;
+	-* | ?*)
+		echo "Unknown argument: ${1}" >&2
+		echo ""
+		fn_usage >&2
+		return 1
+		;;
+	esac
+
+	b_config_dir=~/.config/proxmox-sh
+
+	if ! test -d "${b_config_dir}"; then
+		echo "ERROR: ${b_config_dir} not found" >&2
+		return 1
+	fi
+
+	# Resolve current profile
+	b_current=""
+	if test -L "${b_config_dir}/current.env"; then
+		# shellcheck disable=SC2012
+		b_current="$(ls -l "${b_config_dir}/current.env" | sed 's;.*/;;')"
+	fi
+
+	echo "# profiles"
+	if test -n "${b_current}"; then
+		printf 'current\t%s\n' "${b_current}"
+	fi
+
+	# Dim host/pool columns when outputting to a terminal
+	b_dim=""
+	b_reset=""
+	if test -t 1; then
+		b_dim='\033[2m'
+		b_reset='\033[0m'
+	fi
+
+	echo ""
+	printf '# n\tprofile\thost\tpools\n'
+
+	b_n=0
+	for b_env in "${b_config_dir}"/*.env; do
+		b_name="$(basename "${b_env}")"
+		case "${b_name}" in
+		current.env | example.env | "*.env") continue ;;
+		esac
+
+		b_n=$((b_n + 1))
+
+		# Source in subshell to extract values
+		b_host=""
+		b_pools=""
+		b_host="$(
+			# shellcheck disable=SC1090
+			(. "${b_env}" 2>/dev/null || true; echo "${PROXMOX_HOST:-unknown}")
+		)"
+		b_pools="$(
+			# shellcheck disable=SC1090
+			(. "${b_env}" 2>/dev/null || true; echo "${PROXMOX_RESOURCE_POOL:-}")
+		)"
+
+		b_marker=""
+		if test "${b_name}" = "${b_current}"; then
+			b_marker=" [current]"
+		fi
+
+		# shellcheck disable=SC2059
+		printf "%s\t%s%s\t${b_dim}%s\t%s${b_reset}\n" "${b_n}" "${b_name}" "${b_marker}" "${b_host}" "${b_pools}"
+	done
+
+	if test "${b_n}" -eq 0; then
+		echo "# (none)"
+	fi
+}
+
+main "$@"

@@ -1,0 +1,167 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-templates: list available OS templates for agent selection
+#
+# Output: numbered list of vztmpl/ paths with init system and variant tags.
+# Designed for the agent to present to the user as a pick list.
+#
+# Usage:
+#   proxmox-sh-templates                    # uses current.env
+#   proxmox-sh-templates --env <file>       # uses specific env
+#
+# Exit codes:
+#   0 - templates listed
+#   1 - cannot connect or missing env
+#
+# AGENT: Present as a numbered pick list. Curate for the user:
+#   - Trim older versions; keep only the newest of each distro
+#   - Highlight "bnna" and "custom" variants (preferred over standard)
+#   - Mark the "default" tag from the env
+#   - Callout init system differences: systemd (most services), openrc
+#     (minimal/lightweight), sysvinit (no-systemd preference)
+#   - Suggest a reasonable default but let the user choose
+#   - Use formatting (bold, dim) to make types visually distinct
+
+g_env_file=""
+
+fn_usage() {
+	echo "Usage: proxmox-sh-templates [--env <file>]"
+	echo ""
+	echo "List available OS templates with init system and variant tags."
+}
+
+main() {
+	while test -n "${1:-}"; do
+		case "${1}" in
+		--env)
+			shift
+			g_env_file="${1:-}"
+			if test -z "${g_env_file}"; then
+				echo "ERROR: --env requires a file path" >&2
+				echo ""
+				fn_usage >&2
+				return 1
+			fi
+			;;
+		--help | -help | help)
+			fn_usage
+			return 0
+			;;
+		*)
+			echo "Unknown argument: ${1}" >&2
+			echo ""
+			fn_usage >&2
+			return 1
+			;;
+		esac
+		shift
+	done
+
+	if test -z "${g_env_file}"; then
+		if ! test -e ~/.config/proxmox-sh/current.env; then
+			echo "ERROR: no current.env and no --env flag" >&2
+			return 1
+		fi
+		g_env_file=~/.config/proxmox-sh/current.env
+	fi
+
+	# shellcheck disable=SC1090
+	. "${g_env_file}" || true
+
+	if test -z "${PROXMOX_HOST:-}" ||
+		test -z "${PROXMOX_TOKEN_ID:-}" ||
+		test -z "${PROXMOX_TOKEN_SECRET:-}"; then
+		echo "ERROR: missing HOST/TOKEN vars" >&2
+		return 1
+	fi
+
+	b_node="${PROXMOX_TARGET_NODE:-pve1}"
+	b_default="${PROXMOX_TEMPLATE_DEFAULT:-}"
+
+	b_auth="Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
+	b_base_url="https://${PROXMOX_HOST}/api2/json"
+	b_curl="curl --max-time 10 --fail-with-body -sSL"
+
+	# Find all storages that support vztmpl content
+	if ! b_storages="$(${b_curl} -H "${b_auth}" \
+		"${b_base_url}/nodes/${b_node}/storage" 2>&1)"; then
+		echo "ERROR: cannot list storages" >&2
+		return 1
+	fi
+
+	b_tmpl_storages="$(echo "${b_storages}" | jq -r '
+		.data[] | select(.content // "" | split(",") | any(. == "vztmpl"))
+		| .storage
+	' | sort)"
+
+	if test -z "${b_tmpl_storages}"; then
+		echo "ERROR: no storages with vztmpl content" >&2
+		return 1
+	fi
+
+	echo "# templates"
+	printf 'node\t%s\n' "${b_node}"
+	if test -n "${b_default}"; then
+		printf 'default\t%s\n' "${b_default}"
+	fi
+
+	# Collect volids from all accessible storages
+	b_all_volids=""
+	for b_stor in ${b_tmpl_storages}; do
+		b_content="$(${b_curl} -H "${b_auth}" \
+			"${b_base_url}/nodes/${b_node}/storage/${b_stor}/content?content=vztmpl" 2>/dev/null)" || continue
+		b_volids="$(echo "${b_content}" | jq -r '.data[].volid' 2>/dev/null)" || continue
+		if test -n "${b_volids}"; then
+			if test -n "${b_all_volids}"; then
+				b_all_volids="$(printf '%s\n%s' "${b_all_volids}" "${b_volids}")"
+			else
+				b_all_volids="${b_volids}"
+			fi
+		fi
+	done
+
+	if test -z "${b_all_volids}"; then
+		echo "# (none)"
+		return
+	fi
+
+	# Deduplicate by template name (prefer configured storage), sort
+	b_all_volids="$(echo "${b_all_volids}" | sort -t: -k2 -u)"
+
+	echo ""
+	printf '# n\ttemplate\tinit\tvariant\n'
+
+	b_n=0
+	echo "${b_all_volids}" | while read -r b_volid; do
+		b_n=$((b_n + 1))
+
+		# Strip storage prefix for display
+		b_tmpl="$(echo "${b_volid}" | sed 's;^[^:]*:;;')"
+
+		# Detect init system
+		b_init="unknown"
+		case "${b_tmpl}" in
+		*ubuntu* | *debian*) b_init="systemd" ;;
+		*alpine*) b_init="openrc" ;;
+		*centos* | *rocky* | *fedora* | *almalinux*) b_init="systemd" ;;
+		*devuan*) b_init="sysvinit" ;;
+		esac
+
+		# Detect variant
+		b_variant="standard"
+		case "${b_tmpl}" in
+		*bnna*) b_variant="bnna" ;;
+		esac
+
+		# Mark default
+		if test -n "${b_default}" && echo "${b_volid}" | grep -qF "${b_default}"; then
+			b_variant="${b_variant},default"
+		fi
+
+		printf '%s\t%s\t%s\t%s\n' "${b_n}" "${b_tmpl}" "${b_init}" "${b_variant}"
+	done
+}
+
+main "$@"

@@ -1,0 +1,105 @@
+#!/bin/sh
+set -e
+set -u
+
+# proxmox-sh-ssh-check: verify SSH config for direct-IP domain access
+#
+# Checks ~/.ssh/config for the wildcard Host entry needed to SSH into
+# Proxmox VMs via sclient. Prints the entry to add if missing.
+#
+# Usage:
+#   proxmox-sh-ssh-check                    # uses DIRECT_IP_DOMAIN from current.env
+#   proxmox-sh-ssh-check vms.example.net    # check a specific domain
+#
+# Exit codes:
+#   0 - wildcard entry found
+#   1 - missing or no domain
+#
+# AGENT: On OK, proceed silently. On missing entry, show the user
+#   what needs to be added and ask permission before touching SSH config.
+#   Suggest ~/.ssh/config.d/proxmox-sh.sshconfig as the target file.
+
+fn_usage() {
+	echo "Usage: proxmox-sh-ssh-check [<direct-ip-domain>]"
+	echo ""
+	echo "Verify SSH config has wildcard entry for direct-IP domain access."
+}
+
+main() {
+	case "${1:-}" in
+	--help | -help | help)
+		fn_usage
+		return 0
+		;;
+	esac
+
+	b_domain="${1:-}"
+
+	if test -z "${b_domain}"; then
+		if ! test -e ~/.config/proxmox-sh/current.env; then
+			echo "ERROR: no domain arg and no current.env" >&2
+			return 1
+		fi
+		# shellcheck disable=SC1090
+		. ~/.config/proxmox-sh/current.env || true
+		b_domain="${DIRECT_IP_DOMAIN:-}"
+	fi
+
+	if test -z "${b_domain}"; then
+		echo "ERROR: DIRECT_IP_DOMAIN not set and no domain arg" >&2
+		return 1
+	fi
+
+	echo "# ssh-check"
+	printf 'domain\t%s\n' "${b_domain}"
+
+	b_pattern="*.${b_domain}"
+
+	if ! test -f ~/.ssh/config; then
+		echo "MISSING: ~/.ssh/config does not exist"
+		fn_print_needed "${b_pattern}" "${b_domain}"
+		return 1
+	fi
+
+	# Search ~/.ssh/config and any Include'd files in config.d
+	b_ssh_files="$(find ~/.ssh -name '*.sshconfig' -o -name 'config' 2>/dev/null)"
+
+	# Look for Host *.<domain> across all ssh config files
+	# Use grep -F because b_pattern contains a literal * (e.g. *.vms.example.com)
+	b_match_file=""
+	if test -n "${b_ssh_files}"; then
+		b_match_file="$(echo "${b_ssh_files}" | xargs grep -lF "${b_pattern}" 2>/dev/null | head -1)" || true
+	fi
+
+	if test -n "${b_match_file}"; then
+		printf 'OK: wildcard entry found for %s in %s\n' "${b_pattern}" "${b_match_file}"
+
+		# Also check sclient is in the ProxyCommand
+		if grep -A2 -F "${b_pattern}" "${b_match_file}" | grep -q "sclient"; then
+			echo "OK: sclient ProxyCommand present"
+		else
+			echo "WARN: Host entry exists but no sclient ProxyCommand"
+		fi
+		return 0
+	fi
+
+	echo "MISSING: no Host entry for ${b_pattern}"
+	fn_print_needed "${b_pattern}" "${b_domain}"
+	return 1
+}
+
+fn_print_needed() {
+	b_pattern="${1}"
+	b_domain="${2}"
+
+	b_target_file=~/.ssh/config.d/proxmox-sh.sshconfig
+
+	echo ""
+	echo "# add-to-ssh-config"
+	printf 'file\t%s\n' "${b_target_file}"
+	echo ""
+	printf 'Host %s\n' "${b_pattern}"
+	printf '    ProxyCommand sclient --alpn ssh %%h\n'
+}
+
+main "$@"
