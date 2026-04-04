@@ -7,6 +7,12 @@ if test -e ~/.config/proxmox-sh/current.env; then
    . ~/.config/proxmox-sh/current.env || true
 fi
 
+if test -t 2; then
+   g_tty='/dev/tty'
+else
+   g_tty='/dev/stderr'
+fi
+
 g_show_help=''
 if test -z "${PROXMOX_VNET:-}" && test -z "${PROXMOX_BRIDGE:-}"; then
    g_show_help='1'
@@ -90,7 +96,7 @@ fn_status() { (
    echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status"
    ${my_curl} -H "${my_auth}" \
       "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status" |
-      jq '.' | tee /dev/tty
+      jq '.' | tee "${g_tty}"
 ); }
 
 fn_lxc_last_id() { (
@@ -231,7 +237,7 @@ fn_create_lxc() { (
    )"
 
    # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/lxc>
-   echo POST "${my_base_url}/nodes/${my_target_node}/lxc" ... >> /dev/tty
+   echo POST "${my_base_url}/nodes/${my_target_node}/lxc" ... >> "${g_tty}"
    my_task_result="$(
       ${my_curl} -H "${my_auth}" \
          -X POST "${my_base_url}/nodes/${my_target_node}/lxc" \
@@ -253,9 +259,9 @@ fn_create_lxc() { (
          --data-urlencode "swap=0" \
          --data-urlencode "net0=name=eth0,bridge=${my_bridge}${my_vlan_param},${my_net},rate=91" \
          --data-urlencode "searchdomain=${PROXMOX_ID_PREFIX}.${my_search_domain}" \
-         --data-urlencode "nameserver=${my_nameserver}" | jq | tee /dev/tty
+         --data-urlencode "nameserver=${my_nameserver}" | jq | tee "${g_tty}"
    )"
-   echo '' >> /dev/tty
+   echo '' >> "${g_tty}"
    #        --data-urlencode "arch=amd64" \
 
    #{"success":1,"data":"UPID:pve1:000C38ED:01978844:640D7BB1:vzcreate:101:root@pam:"}
@@ -364,7 +370,7 @@ fn_wait_status() { (
    #echo "GET ${my_base_url}/nodes/${my_target_node}/tasks/<escape(${my_task_id_raw})>/status"
    my_task_result="$(
       ${my_curl} -H "${my_auth}" \
-         "${my_base_url}/nodes/${my_target_node}/tasks/${my_task_id}/status" # | jq | tee /dev/tty
+         "${my_base_url}/nodes/${my_target_node}/tasks/${my_task_id}/status" # | jq | tee "${g_tty}"
    )"
    #echo ''
 
@@ -611,6 +617,10 @@ main() { (
             ;;
       esac
    done
+
+   if test -z "${my_os}"; then
+      my_os="${PROXMOX_TEMPLATE_DEFAULT:-}"
+   fi
 
    if test -z "${my_vcpus}"; then
       my_vcpus="${PROXMOX_VCPUS_DEFAULT:-2}"
