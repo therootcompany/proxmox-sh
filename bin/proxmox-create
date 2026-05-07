@@ -77,18 +77,26 @@ if test -n "${PROXMOX_BASE_URL:-}"; then
 else
    my_base_url="https://${PROXMOX_HOST}/api2/json"
 fi
-my_curl="curl --max-time 15 --fail-with-body -sSL"
+fn_curl() {
+   if test -n "${TLS_ROUTER_AUTH:-}"; then
+      curl --max-time 15 --fail-with-body -sSL \
+         -H "X-TLS-Router-Auth: ${TLS_ROUTER_AUTH}" \
+         "$@"
+   else
+      curl --max-time 15 --fail-with-body -sSL "$@"
+   fi
+}
 
 fn_discover() { (
    echo "${my_base_url}/"
-   ${my_curl} -H "${my_auth}" \
+   fn_curl -H "${my_auth}" \
       "${my_base_url}/" |
       jq '.'
 ); }
 
 fn_status() { (
    echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status"
-   ${my_curl} -H "${my_auth}" \
+   fn_curl -H "${my_auth}" \
       "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status" |
       jq '.' | tee /dev/tty
 ); }
@@ -96,7 +104,7 @@ fn_status() { (
 fn_lxc_last_id() { (
    #echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc"
    my_lxcs="$(
-      ${my_curl} -H "${my_auth}" \
+      fn_curl -H "${my_auth}" \
          "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc"
    )"
    my_lxc_last_id="$(
@@ -113,7 +121,7 @@ fn_resources_next_index() { (
    # Or https://192.168.0.101:8006/api2/json/cluster/nextid ?
    #echo "${my_base_url}/cluster/resources"
    my_resources="$(
-      ${my_curl} -H "${my_auth}" \
+      fn_curl -H "${my_auth}" \
          "${my_base_url}/cluster/resources"
    )"
 
@@ -170,7 +178,7 @@ fn_ssh_keys() { (
          ;;
       https:*)
          my_keys="$(
-            ${my_curl} "${my_key_uri}"
+            fn_curl "${my_key_uri}"
          )"
          ;;
       *)
@@ -233,7 +241,7 @@ fn_create_lxc() { (
    # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/lxc>
    echo POST "${my_base_url}/nodes/${my_target_node}/lxc" ... >> /dev/tty
    my_task_result="$(
-      ${my_curl} -H "${my_auth}" \
+      fn_curl -H "${my_auth}" \
          -X POST "${my_base_url}/nodes/${my_target_node}/lxc" \
          --data-urlencode "features=${my_features}" \
          --data-urlencode "start=1" \
@@ -280,7 +288,7 @@ fn_create_lxc() { (
 ); }
 
 fn_ha_groups_list() { (
-   ${my_curl} -H "${my_auth}" \
+   fn_curl -H "${my_auth}" \
       "${my_base_url}/cluster/ha/groups" | jq -r '.data[].group'
 ); }
 
@@ -296,7 +304,7 @@ fn_ha_resources_add() { (
    my_max_restart="1"
    my_comment=""
 
-   ${my_curl} -H "${my_auth}" \
+   fn_curl -H "${my_auth}" \
       -X POST "${my_base_url}/cluster/ha/resources" \
       --data-urlencode "type=${my_type}" \
       --data-urlencode "sid=${my_sid}" \
@@ -363,7 +371,7 @@ fn_wait_status() { (
 
    #echo "GET ${my_base_url}/nodes/${my_target_node}/tasks/<escape(${my_task_id_raw})>/status"
    my_task_result="$(
-      ${my_curl} -H "${my_auth}" \
+      fn_curl -H "${my_auth}" \
          "${my_base_url}/nodes/${my_target_node}/tasks/${my_task_id}/status" # | jq | tee /dev/tty
    )"
    #echo ''
