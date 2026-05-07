@@ -224,8 +224,7 @@ fn_create_lxc() { (
    my_search_domain="${PROXMOX_SEARCH_DOMAIN:-}"
    my_nameserver="${PROXMOX_NAMESERVER:-}"
    my_bridge="${PROXMOX_VNET:-$PROXMOX_BRIDGE}"
-   #my_features='nesting=1'
-   my_features="" # only non-default values can be set
+   my_features='nesting=1'
 
    my_tmpl_vol="${PROXMOX_TEMPLATE_STORAGE}"
    my_fs_size=8
