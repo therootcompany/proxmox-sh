@@ -325,13 +325,14 @@ fn_id_to_net() { (
    # assumed to be less than 4-digits (51-254)
    my_next_unit="${2}"
 
-   # 1101 => '11' '01'
-   my_id_prefix_012="$(echo "${my_id_prefix}" | cut -c'1-2')"
-   my_id_prefix_034="$(echo "${my_id_prefix}" | cut -c'3-4')"
+   # we subtract the "1100" prefix from "1108" because leading zeros ("08", "09") are invalid octal in $(())
+   # 1109 => 11, 9
+   my_id_prefix_12=$((my_id_prefix / 100))
+   my_id_prefix_34=$((my_id_prefix - (my_id_prefix_12 * 100)))
 
-   # 1101 => '11' '1'
-   my_id_prefix_12="$((my_id_prefix_012 + 0))"
-   my_id_prefix_34="$((my_id_prefix_034 + 0))"
+   # 11 => '11', 9 => '09'
+   my_id_prefix_012=$(printf '%02d' "${my_id_prefix_12}")
+   my_id_prefix_034=$(printf '%02d' "${my_id_prefix_34}")
 
    # 1 => 0001
    # 154 => 0154
