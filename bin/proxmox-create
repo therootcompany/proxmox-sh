@@ -762,13 +762,11 @@ main() { (
    echo ""
    printf "Waiting for TLS certificate issuance..."
    b_tls_ok=''
-   b_tls_try=0
-   while test "${b_tls_try}" -lt 6; do
+   for b_tls_try in 1 2 3 4 5 6; do
       if curl -s --max-time 5 "https://${my_ip_domain}" > /dev/null 2>&1; then
          b_tls_ok='1'
          break
       fi
-      b_tls_try="$((b_tls_try + 1))"
       printf "."
       sleep 5
    done
