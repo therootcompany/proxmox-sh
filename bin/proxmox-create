@@ -796,11 +796,24 @@ main() { (
    my_ip_domain="tls-${my_ip_label}.${DIRECT_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
    my_raw_ip_domain="tcp-${my_ip_label}.${DIRECT_IP_DOMAIN:-$PROXMOX_ID_PREFIX.$PROXMOX_SEARCH_DOMAIN}"
 
-   # Initiate ACME TLS now to avoid confusing browser and/or ssh errors
+   # Poll for TLS readiness — the VM and ACME cert may take a moment
    echo ""
    printf "Waiting for TLS certificate issuance..."
-   if curl -s "https://${my_ip_domain}" > /dev/null; then
-      echo 'done'
+   b_tls_ok=''
+   b_tls_try=0
+   while test "${b_tls_try}" -lt 6; do
+      if curl -s --max-time 5 "https://${my_ip_domain}" > /dev/null 2>&1; then
+         b_tls_ok='1'
+         break
+      fi
+      b_tls_try="$((b_tls_try + 1))"
+      printf "."
+      sleep 5
+   done
+   if test -n "${b_tls_ok}"; then
+      echo "done"
+   else
+      echo "timed out (may still be provisioning)"
    fi
 
    {
