@@ -794,10 +794,12 @@ main() { (
 
    # Poll for TLS readiness — the VM and ACME cert may take a moment
    echo ""
-   printf "Waiting for TLS certificate issuance..."
+   printf "Waiting for TLS certificate issuance"
    b_tls_ok=''
    for b_tls_try in 1 2 3 4 5 6; do
-      if curl -s --max-time 5 "https://${my_ip_domain}" > /dev/null 2>&1; then
+      if echo '' | openssl s_client -connect "${my_ip_domain}:443" \
+         -alpn 'ssh,h2,http/1.1' -servername "${my_ip_domain}" \
+         2>/dev/null | grep -q 'BEGIN CERTIFICATE'; then
          b_tls_ok='1'
          break
       fi
@@ -805,7 +807,7 @@ main() { (
       sleep 5
    done
    if test -n "${b_tls_ok}"; then
-      echo "done"
+      echo " done"
    else
       echo "timed out (may still be provisioning)"
    fi
