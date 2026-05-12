@@ -133,7 +133,7 @@ fn_status() { (
    echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status"
    fn_curl -H "${my_auth}" \
       "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status" |
-      jq '.' | tee /dev/tty
+      jq '.' | tee /dev/stderr
 ); }
 
 fn_lxc_last_id() { (
@@ -287,7 +287,7 @@ fn_create_lxc() { (
    )"
 
    # See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/lxc>
-   echo POST "${my_base_url}/nodes/${my_target_node}/lxc" ... >> /dev/tty
+   echo POST "${my_base_url}/nodes/${my_target_node}/lxc" ... >> /dev/stderr
    my_task_result="$(
       fn_curl -H "${my_auth}" \
          -X POST "${my_base_url}/nodes/${my_target_node}/lxc" \
@@ -309,9 +309,9 @@ fn_create_lxc() { (
          --data-urlencode "swap=0" \
          --data-urlencode "net0=name=eth0,bridge=${my_bridge}${my_vlan_param},${my_net},rate=91" \
          --data-urlencode "searchdomain=${PROXMOX_ID_PREFIX}.${my_search_domain}" \
-         --data-urlencode "nameserver=${my_nameserver}" | jq | tee /dev/tty
+         --data-urlencode "nameserver=${my_nameserver}" | jq | tee /dev/stderr
    )"
-   echo '' >> /dev/tty
+   echo '' >> /dev/stderr
    #        --data-urlencode "arch=amd64" \
 
    #{"success":1,"data":"UPID:pve1:000C38ED:01978844:640D7BB1:vzcreate:101:root@pam:"}
@@ -421,7 +421,7 @@ fn_wait_status() { (
    #echo "GET ${my_base_url}/nodes/${my_target_node}/tasks/<escape(${my_task_id_raw})>/status"
    my_task_result="$(
       fn_curl -H "${my_auth}" \
-         "${my_base_url}/nodes/${my_target_node}/tasks/${my_task_id}/status" # | jq | tee /dev/tty
+         "${my_base_url}/nodes/${my_target_node}/tasks/${my_task_id}/status" # | jq | tee /dev/stderr
    )"
    #echo ''
 
