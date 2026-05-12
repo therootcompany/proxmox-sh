@@ -135,19 +135,20 @@ fn_resources_next_index() { (
       return
    fi
 
-   my_resource_last_id="$(
+   my_used_suffixes="$(
       echo "${my_resource_ids}" |
-         sort -u |
-         tail -n 1
+         while read -r my_rid; do
+            echo "$((my_rid % 1000))"
+         done |
+         sort -n -u
    )"
 
-   # Goal: 1101001 => 2
-   # 0. 1101001 => 1
-   my_resource_index="$((my_resource_last_id % 1000))"
-   # 1. 1 => 2
-   my_resource_index="$((my_resource_index + 1))"
+   my_next="${PROXMOX_ID_START}"
+   while echo "${my_used_suffixes}" | grep -q "^${my_next}$"; do
+      my_next="$((my_next + 1))"
+   done
 
-   echo "${my_resource_index}"
+   echo "${my_next}"
 ); }
 
 fn_ssh_keys() { (
