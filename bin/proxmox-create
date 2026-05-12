@@ -18,6 +18,7 @@ fi
 
 PROXMOX_ID_PREFIX="${PROXMOX_ID_PREFIX:-${PROXMOX_ID_VLAN:-}}"
 PROXMOX_ID_START="${PROXMOX_ID_START:-51}"
+PROXMOX_ID_END="${PROXMOX_ID_END:-249}"
 
 if test -n "${g_show_help:-}" ||
    { test -z "${PROXMOX_BASE_URL:-}" && test -z "${PROXMOX_HOST:-}"; } ||
@@ -169,19 +170,33 @@ fn_resources_next_index() { (
       return
    fi
 
-   my_resource_last_id="$(
+   my_used_suffixes="$(
       echo "${my_resource_ids}" |
-         sort -u |
-         tail -n 1
+         while read -r my_rid; do
+            echo "$((my_rid % 1000))"
+         done |
+         sort -n -u
    )"
 
-   # Goal: 1101001 => 2
-   # 0. 1101001 => 1
-   my_resource_index="$((my_resource_last_id % 1000))"
-   # 1. 1 => 2
-   my_resource_index="$((my_resource_index + 1))"
+   my_id_start="${PROXMOX_ID_START}"
+   my_id_end="${PROXMOX_ID_END}"
+   if test "${my_id_start}" -lt 2; then
+      my_id_start=2
+   fi
+   if test "${my_id_end}" -gt 254; then
+      my_id_end=254
+   fi
 
-   echo "${my_resource_index}"
+   my_next="${my_id_start}"
+   while echo "${my_used_suffixes}" | grep -q "^${my_next}$"; do
+      my_next="$((my_next + 1))"
+      if test "${my_next}" -gt "${my_id_end}"; then
+         echo "ERROR: no available IDs in prefix ${my_prefix} (range ${my_id_start}-${my_id_end})" >&2
+         return 1
+      fi
+   done
+
+   echo "${my_next}"
 ); }
 
 fn_ssh_keys() { (
