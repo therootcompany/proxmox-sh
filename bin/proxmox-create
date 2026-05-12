@@ -78,13 +78,50 @@ else
    my_base_url="https://${PROXMOX_HOST}/api2/json"
 fi
 fn_curl() {
+   b_url="$(fn_curl_last_arg "$@")"
+   b_resp_file="$(mktemp)"
+
+   set +e
    if test -n "${TLS_ROUTER_AUTH:-}"; then
-      curl --max-time 15 --fail-with-body -sSL \
-         -H "X-TLS-Router-Auth: ${TLS_ROUTER_AUTH}" \
-         "$@"
+      b_http_code="$(
+         curl --max-time 15 --fail-with-body -sSL \
+            -H "X-TLS-Router-Auth: ${TLS_ROUTER_AUTH}" \
+            -w '%{http_code}' -o "${b_resp_file}" \
+            "$@"
+      )"
    else
-      curl --max-time 15 --fail-with-body -sSL "$@"
+      b_http_code="$(
+         curl --max-time 15 --fail-with-body -sSL \
+            -w '%{http_code}' -o "${b_resp_file}" \
+            "$@"
+      )"
    fi
+   b_exit=$?
+   set -e
+
+   if test "${b_exit}" -ne 0; then
+      echo "" >&2
+      echo "ERROR: curl request failed" >&2
+      echo "    URL:    ${b_url}" >&2
+      echo "    HTTP:   ${b_http_code}" >&2
+      echo "    curl:   exit ${b_exit}" >&2
+      b_body="$(cat "${b_resp_file}" 2>/dev/null)"
+      rm -f "${b_resp_file}"
+      if test -n "${b_body}"; then
+         echo "    body:   ${b_body}" >&2
+      fi
+      return "${b_exit}"
+   fi
+
+   cat "${b_resp_file}"
+   rm -f "${b_resp_file}"
+}
+
+fn_curl_last_arg() {
+   while test "$#" -gt 1; do
+      shift
+   done
+   echo "${1}"
 }
 
 fn_discover() { (
