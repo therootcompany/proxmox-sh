@@ -256,10 +256,13 @@ fn_create_lxc() (
 
 	my_os_tmpl="${6}"
 	my_memory="${7}"
-	my_mp0_size="${8}"
-	my_cores="${9}"
-	my_cpulimit="${10}"
-	my_vmid="${11}"
+	my_rootfs_size="${8}"
+	my_mp0_size="${9}"
+	my_cores="${10}"
+	my_cpulimit="${11}"
+	my_vmid="${12}"
+
+	my_fs_size="${my_rootfs_size}"
 
 	my_password="$(
 		xxd -l12 -ps /dev/urandom |
@@ -276,7 +279,6 @@ fn_create_lxc() (
 	my_features='nesting=1'
 
 	my_tmpl_vol="${PROXMOX_TEMPLATE_STORAGE}"
-	my_fs_size=8
 	my_fs_pool="${PROXMOX_FS_POOL}"
 	my_fs_opts='discard;lazytime;noatime'
 	my_mp0_pool="${PROXMOX_DATA_POOL}"
@@ -479,7 +481,8 @@ fn_help() (
 	echo "    --vcpus 2             # 1-12 vCPU Cores"
 	echo "    --vcpu-limit 1.5      # max vCPU usage (<= vcpus)"
 	echo "    --ram 512             # 64-24576 MB"
-	echo "    --storage 1           # 1-250 GB"
+	echo "    --extra-storage 1     # 0.1-250.0 GB, /mnt/storage"
+	echo "    --os-storage 8        # 0.2-50.0 GB, / (rootfs)"
 	echo ""
 
 	if test -n "${my_pubkeys}"; then
@@ -526,7 +529,8 @@ main() (
 	my_vcpus='2'
 	my_vcpu_limit=''
 	my_ram='512'
-	my_storage='0.1'
+	my_extra_storage='0.1'
+	my_os_storage='8'
 	my_ha_group=''
 
 	if test -n "${PROXMOX_HA_ENABLE:-}"; then
@@ -639,11 +643,19 @@ main() (
 				fi
 				shift
 				;;
-			--storage)
-				my_storage="${1:-}"
-				if test "${my_storage}" -lt 1 ||
-					test "${my_storage}" -gt 250; then
-					echo "ERROR: --storage must be between 1 and 250 (gigabytes)" >&2
+			--extra-storage | --storage)
+				my_extra_storage="${1:-}"
+				if echo "${my_extra_storage} < 0.1 || ${my_extra_storage} > 250.0" | bc -l | grep -q 1; then
+					echo "ERROR: --extra-storage must be between 0.1 and 250.0 (gigabytes)" >&2
+					fn_help >&2
+					return 1
+				fi
+				shift
+				;;
+			--os-storage)
+				my_os_storage="${1:-}"
+				if echo "${my_os_storage} < 0.2 || ${my_os_storage} > 50.0" | bc -l | grep -q 1; then
+					echo "ERROR: --os-storage must be between 0.2 and 50.0 (gigabytes)" >&2
 					fn_help >&2
 					return 1
 				fi
@@ -777,14 +789,15 @@ main() (
 		echo ""
 		echo "    OS:            ${my_os}"
 		echo "    RAM:           ${my_ram}MB"
-		echo "    /mnt/storage:  ${my_storage}GB"
+		echo "    / (rootfs):    ${my_os_storage}GB"
+		echo "    /mnt/storage:  ${my_extra_storage}GB"
 		echo "    vCPU:          ${my_vcpus} cores"
 		echo "                   ${my_vcpu_limit} (usable)"
 		echo ""
 	} >&2
 
 	my_task_id="$(
-		fn_create_lxc "${my_target_node}" "${PROXMOX_VLAN:-}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_storage}" "${my_vcpus}" "${my_vcpu_limit}" "${my_vmid}"
+		fn_create_lxc "${my_target_node}" "${PROXMOX_VLAN:-}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_os_storage}" "${my_extra_storage}" "${my_vcpus}" "${my_vcpu_limit}" "${my_vmid}"
 	)"
 	{
 		echo "Waiting for ${my_task_id}..."
