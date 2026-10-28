@@ -475,7 +475,7 @@ fn_help() (
 	echo ""
 	echo "OPTIONS"
 	echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4"
-	echo "    --os 'alpine18'       # alpine17,18,19,20 or ubuntu22,24"
+	echo "    --os 'alpine23'       # alpine23,20,19,18,17 (bnna), ubuntu24,22 / debian13,12 (standard)"
 	echo "    --vcpus 2             # 1-12 vCPU Cores"
 	echo "    --vcpu-limit 1.5      # max vCPU usage (<= vcpus)"
 	echo "    --ram 512             # 64-24576 MB"
@@ -589,8 +589,9 @@ main() (
 			--os)
 				my_os="${1:-}"
 				case "${my_os}" in
-					ubuntu | ubuntu24 | ubuntu22 | ubuntu20) ;;
-					alpine | alpine22 | alpine21 | alpine20 | alpine19 | alpine18 | alpine17) ;;
+					debian13 | debian12) ;;
+					ubuntu24 | ubuntu22 | ubuntu20) ;;
+					alpine23 | alpine20 | alpine19 | alpine18 | alpine17) ;;
 					vztmpl/*) ;;
 					*)
 						echo "ERROR: --os (OS name) must be an OS+version (e.g. 'alpine20', 'ubuntu24'), or template ('vztmpl/ubuntu-24.04-standard.tar.zst'" >&2
@@ -721,7 +722,10 @@ main() (
 		vztmpl/*)
 			my_os_tmpl="${my_os}"
 			;;
-		apline | alpine20)
+		alpine23)
+			my_os_tmpl='vztmpl/alpine-3.23-bnna_20260116_amd64.tar.zst'
+			;;
+		alpine20)
 			my_os_tmpl='vztmpl/alpine-3.20-bnna_20240908_20241212_amd64.tar.zst'
 			;;
 		alpine19)
@@ -733,7 +737,13 @@ main() (
 		alpine17)
 			my_os_tmpl='vztmpl/alpine-3.17-bnna_20221129_20241212_amd64.tar.zst'
 			;;
-		ubuntu | ubuntu24)
+		debian13)
+			my_os_tmpl='vztmpl/debian-13-standard_13.6-1_amd64.tar.zst'
+			;;
+		debian12)
+			my_os_tmpl='vztmpl/debian-12-standard_12.12-1_amd64.tar.zst'
+			;;
+		ubuntu24)
 			my_os_tmpl='vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
 			;;
 		ubuntu22)
