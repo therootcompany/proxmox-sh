@@ -3,8 +3,8 @@ set -e
 set -u
 
 if test -e ~/.config/caddy-sh/current.env; then
-    # shellcheck disable=SC1090
-    . ~/.config/caddy-sh/current.env
+	# shellcheck disable=SC1090
+	. ~/.config/caddy-sh/current.env
 fi
 
 g_ts="$(date '+%F_%H.%M.%S')"
@@ -15,21 +15,21 @@ g_ts="$(date '+%F_%H.%M.%S')"
 # CADDY_SRV
 
 fn_get_config() { (
-    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
-        -u "${CADDY_USER}:${CADDY_PASS}" \
-        "${CADDY_HOST}/config/" | jq
+	curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
+		-u "${CADDY_USER}:${CADDY_PASS}" \
+		"${CADDY_HOST}/config/" | jq
 ); }
 
 fn_add_tls_policy() { (
-    my_lxc_id="${1:-}"
-    my_lxc_domain="${2:-}"
+	my_lxc_id="${1:-}"
+	my_lxc_domain="${2:-}"
 
-    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
-        -u "${CADDY_USER}:${CADDY_PASS}" \
-        -X POST \
-        "${CADDY_HOST}/config/apps/tls/automation/policies/..." \
-        -H "Content-Type: application/json" \
-        --data-binary '
+	curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
+		-u "${CADDY_USER}:${CADDY_PASS}" \
+		-X POST \
+		"${CADDY_HOST}/config/apps/tls/automation/policies/..." \
+		-H "Content-Type: application/json" \
+		--data-binary '
           [{
             "@id": "'"${my_lxc_id}"'_tls_policy",
             "subjects": [ "'"${my_lxc_domain}"'" ]
@@ -38,15 +38,15 @@ fn_add_tls_policy() { (
 ); }
 
 fn_add_tls_policy_dns() { (
-    my_lxc_id="${1:-}"
-    my_lxc_domain="${2:-}"
+	my_lxc_id="${1:-}"
+	my_lxc_domain="${2:-}"
 
-    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
-        -u "${CADDY_USER}:${CADDY_PASS}" \
-        -X POST \
-        "${CADDY_HOST}/config/apps/tls/automation/policies/..." \
-        -H "Content-Type: application/json" \
-        --data-binary '
+	curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
+		-u "${CADDY_USER}:${CADDY_PASS}" \
+		-X POST \
+		"${CADDY_HOST}/config/apps/tls/automation/policies/..." \
+		-H "Content-Type: application/json" \
+		--data-binary '
           [{
             "@id": "'"${my_lxc_id}"'_tls_policy",
             "subjects": [ "'"${my_lxc_domain}"'" ],
@@ -73,28 +73,28 @@ fn_add_tls_policy_dns() { (
 ); }
 
 fn_add_tls_automation() { (
-    #my_lxc_id="${1:-}"
-    my_lxc_domain="${2:-}"
+	#my_lxc_id="${1:-}"
+	my_lxc_domain="${2:-}"
 
-    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
-        -u "${CADDY_USER}:${CADDY_PASS}" \
-        -X POST \
-        "${CADDY_HOST}/config/apps/tls/certificates/automate/..." \
-        -H "Content-Type: application/json" \
-        --data-binary '["'"${my_lxc_domain}"'"]'
+	curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
+		-u "${CADDY_USER}:${CADDY_PASS}" \
+		-X POST \
+		"${CADDY_HOST}/config/apps/tls/certificates/automate/..." \
+		-H "Content-Type: application/json" \
+		--data-binary '["'"${my_lxc_domain}"'"]'
 ); }
 
 fn_add_tls_routing() { (
-    my_lxc_id="${1:-}"
-    my_lxc_domain="${2:-}"
-    my_lxc_ip="${3:-}"
+	my_lxc_id="${1:-}"
+	my_lxc_domain="${2:-}"
+	my_lxc_ip="${3:-}"
 
-    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
-        -u "${CADDY_USER}:${CADDY_PASS}" \
-        -X POST \
-        "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/listener_wrappers/0/routes/0/handle/..." \
-        -H "Content-Type: application/json" \
-        --data-binary '
+	curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
+		-u "${CADDY_USER}:${CADDY_PASS}" \
+		-X POST \
+		"${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/listener_wrappers/0/routes/0/handle/..." \
+		-H "Content-Type: application/json" \
+		--data-binary '
         [{
           "@id": "'"${my_lxc_id}"'_tls_routing",
           "handler": "subroute",
@@ -130,17 +130,17 @@ fn_add_tls_routing() { (
 ); }
 
 fn_add_http_handler() { (
-    my_lxc_id="${1:-}"
-    my_lxc_domain="${2:-}"
-    my_lxc_ip="${3:-}"
-    my_tcp_port="${4:-}"
+	my_lxc_id="${1:-}"
+	my_lxc_domain="${2:-}"
+	my_lxc_ip="${3:-}"
+	my_tcp_port="${4:-}"
 
-    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
-        -u "${CADDY_USER}:${CADDY_PASS}" \
-        -X POST \
-        "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/routes/..." \
-        -H "Content-Type: application/json" \
-        --data-binary '
+	curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
+		-u "${CADDY_USER}:${CADDY_PASS}" \
+		-X POST \
+		"${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/routes/..." \
+		-H "Content-Type: application/json" \
+		--data-binary '
         [{
           "@id": "'"${my_lxc_id}"'_http_routing",
           "match": [ { "host": [ "'"${my_lxc_domain}"'" ] } ],
@@ -172,23 +172,23 @@ fn_add_http_handler() { (
 ); }
 
 fn_add_reverse_proxy_tls() { (
-    my_lxc_id="${1:-}"
-    my_lxc_domain="${2:-}"
-    my_lxc_ip="${3:-}"
-    my_tcp_port="${4:-}"
+	my_lxc_id="${1:-}"
+	my_lxc_domain="${2:-}"
+	my_lxc_ip="${3:-}"
+	my_tcp_port="${4:-}"
 
-    # handle: [ { handler: "reverse_proxy", ... }]
-    # "headers": {
-    #   "request": { "set": {
-    #       "Host": [ "{http.reverse_proxy.upstream.hostport}" ]
-    #   } }
-    # },
-    curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
-        -u "${CADDY_USER}:${CADDY_PASS}" \
-        -X POST \
-        "${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/routes/..." \
-        -H "Content-Type: application/json" \
-        --data-binary '
+	# handle: [ { handler: "reverse_proxy", ... }]
+	# "headers": {
+	#   "request": { "set": {
+	#       "Host": [ "{http.reverse_proxy.upstream.hostport}" ]
+	#   } }
+	# },
+	curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
+		-u "${CADDY_USER}:${CADDY_PASS}" \
+		-X POST \
+		"${CADDY_HOST}/config/apps/http/servers/${CADDY_SRV}/routes/..." \
+		-H "Content-Type: application/json" \
+		--data-binary '
         [{
           "@id": "'"${my_lxc_id}"'_http_routing",
           "handle": [
@@ -226,204 +226,204 @@ fn_add_reverse_proxy_tls() { (
 ); }
 
 fn_help() { (
-    echo ""
-    echo "USAGE"
-    echo "    caddy-add <internal-ip> <domain> [--to-port=3080] [--tls]"
-    echo ""
-    echo "EXAMPLES"
-    echo "    caddy-add 192.168.0.103 pve1.example.com --to-port 8006 --tls"
-    echo "    caddy-add 192.168.0.103 lxc103.example.com --to-port 80"
-    echo "    caddy-add 192.168.0.103 lxc103.example.com"
-    echo ""
-    echo "IMPORTANT"
-    echo "    BAD:  caddy run --config ./caddy.json # Will NOT persist!"
-    echo "    GOOD: caddy run --resume"
-    echo ""
+	echo ""
+	echo "USAGE"
+	echo "    caddy-add <internal-ip> <domain> [--to-port=3080] [--tls]"
+	echo ""
+	echo "EXAMPLES"
+	echo "    caddy-add 192.168.0.103 pve1.example.com --to-port 8006 --tls"
+	echo "    caddy-add 192.168.0.103 lxc103.example.com --to-port 80"
+	echo "    caddy-add 192.168.0.103 lxc103.example.com"
+	echo ""
+	echo "IMPORTANT"
+	echo "    BAD:  caddy run --config ./caddy.json # Will NOT persist!"
+	echo "    GOOD: caddy run --resume"
+	echo ""
 ); }
 
 main() { (
-    #fn_get_config
-    #return 1
+	#fn_get_config
+	#return 1
 
-    my_lxc_ip=""
-    my_lxc_domain=""
+	my_lxc_ip=""
+	my_lxc_domain=""
 
-    my_tcp_port="3080"
-    my_tls=""
-    while test -n "${1:-}"; do
-        b_arg="${1:-}"
-        shift
+	my_tcp_port="3080"
+	my_tls=""
+	while test -n "${1:-}"; do
+		b_arg="${1:-}"
+		shift
 
-        case "${b_arg}" in
-            help | --help)
-                fn_help
-                return 0
-                ;;
-            --tls)
-                my_tls="tls"
-                ;;
-            --to-port)
-                if test -z "${1:-}"; then
-                    fn_help
-                    return 1
-                fi
-                my_tcp_port="${1}"
-                shift
-                ;;
-            --*)
-                {
-                    echo ""
-                    echo "unknown flag '${b_arg}'"
-                    echo ""
-                } >&2
-                fn_help
-                return 1
-                ;;
-            *)
-                if test -z "${my_lxc_ip}"; then
-                    my_lxc_ip="${b_arg}"
-                    continue
-                fi
+		case "${b_arg}" in
+			help | --help)
+				fn_help
+				return 0
+				;;
+			--tls)
+				my_tls="tls"
+				;;
+			--to-port)
+				if test -z "${1:-}"; then
+					fn_help
+					return 1
+				fi
+				my_tcp_port="${1}"
+				shift
+				;;
+			--*)
+				{
+					echo ""
+					echo "unknown flag '${b_arg}'"
+					echo ""
+				} >&2
+				fn_help
+				return 1
+				;;
+			*)
+				if test -z "${my_lxc_ip}"; then
+					my_lxc_ip="${b_arg}"
+					continue
+				fi
 
-                if test -z "${my_lxc_domain}"; then
-                    my_lxc_domain="${b_arg}"
-                    continue
-                fi
+				if test -z "${my_lxc_domain}"; then
+					my_lxc_domain="${b_arg}"
+					continue
+				fi
 
-                {
-                    echo ""
-                    echo "unknown argument '${b_arg}'"
-                    echo ""
-                } >&2
-                fn_help
-                return 1
-                ;;
-        esac
-    done
+				{
+					echo ""
+					echo "unknown argument '${b_arg}'"
+					echo ""
+				} >&2
+				fn_help
+				return 1
+				;;
+		esac
+	done
 
-    if test -z "${my_lxc_domain}" ||
-        test -z "${my_lxc_ip}"; then
+	if test -z "${my_lxc_domain}" ||
+		test -z "${my_lxc_ip}"; then
 
-        fn_help
-        return 1
-    fi
+		fn_help
+		return 1
+	fi
 
-    my_lxc_id="$(echo "${my_lxc_domain:-}" | sed 's;\.;_;g')"
+	my_lxc_id="$(echo "${my_lxc_domain:-}" | sed 's;\.;_;g')"
 
-    echo "Adding TLS Policy (\"@id\": \"${my_lxc_id}_tls_policy\")..."
-    fn_add_tls_policy "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
-    # or fn_add_tls_policy_dns
+	echo "Adding TLS Policy (\"@id\": \"${my_lxc_id}_tls_policy\")..."
+	fn_add_tls_policy "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+	# or fn_add_tls_policy_dns
 
-    echo "Enabling TLS Automation for \"${my_lxc_domain}\"..."
-    fn_add_tls_automation "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+	echo "Enabling TLS Automation for \"${my_lxc_domain}\"..."
+	fn_add_tls_automation "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
-    echo "Enabling TLS SNI Routing to SSH:${my_lxc_domain}:22 (\"@id\": \"${my_lxc_id}_tls_routing\")..."
-    fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
+	echo "Enabling TLS SNI Routing to SSH:${my_lxc_domain}:22 (\"@id\": \"${my_lxc_id}_tls_routing\")..."
+	fn_add_tls_routing "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}"
 
-    if test -n "${my_tls}"; then
+	if test -n "${my_tls}"; then
 
-        # FOR EXTERNAL NETWORK DEVICES / HTTPS CONTAINERS
-        echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-        fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
+		# FOR EXTERNAL NETWORK DEVICES / HTTPS CONTAINERS
+		echo "Enabling HTTP Reverse Proxy to HTTPS:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
+		fn_add_reverse_proxy_tls "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
 
-    else
+	else
 
-        # FOR INTERNAL CONTAINERS
-        echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
-        fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
-    fi
+		# FOR INTERNAL CONTAINERS
+		echo "Enabling HTTP Routing to HTTP:${my_lxc_domain}:${my_tcp_port} (\"@id\": \"${my_lxc_id}_http_routing\")..."
+		fn_add_http_handler "${my_lxc_id}" "${my_lxc_domain}" "${my_lxc_ip}" "${my_tcp_port}"
+	fi
 
-    fn_show_ssh_config "${my_lxc_ip}" "${my_lxc_domain}"
+	fn_show_ssh_config "${my_lxc_ip}" "${my_lxc_domain}"
 ); }
 
 fn_ssh_config_init() { (
-    echo ''
-    echo 'Checking ~/.ssh/config ...'
+	echo ''
+	echo 'Checking ~/.ssh/config ...'
 
-    if ! test -f ~/.ssh/config; then
-        mkdir -p ~/.ssh/
-        chmod 0700 ~/.ssh
-        touch ~/.ssh/config
+	if ! test -f ~/.ssh/config; then
+		mkdir -p ~/.ssh/
+		chmod 0700 ~/.ssh
+		touch ~/.ssh/config
 
-        chmod 0600 ~/.ssh/config
-        echo "    created ~/.ssh/config"
-    fi
+		chmod 0600 ~/.ssh/config
+		echo "    created ~/.ssh/config"
+	fi
 
-    if ! find ~/.ssh/ -type d -iname '*bnna*' | grep -q bnna; then
-        mkdir -p ~/.ssh/config.d/bnna.d/
-        chmod 0700 ~/.ssh/config.d/
-        chmod 0700 ~/.ssh/config.d/bnna.d/
-        echo "    created ~/.ssh/config.d/bnna.d/"
-    fi
+	if ! find ~/.ssh/ -type d -iname '*bnna*' | grep -q bnna; then
+		mkdir -p ~/.ssh/config.d/bnna.d/
+		chmod 0700 ~/.ssh/config.d/
+		chmod 0700 ~/.ssh/config.d/bnna.d/
+		echo "    created ~/.ssh/config.d/bnna.d/"
+	fi
 
-    if ! grep -q 'Include.*bnna' ~/.ssh/config; then
-        cp -RPp ~/.ssh/config ~/.ssh/config."${g_ts}".bak
-        if ! grep -q 'Include.*config\.d' ~/.ssh/config; then
-            printf 'Include ~/.ssh/config.d/*.sshconfig\n' >> \
-                ~/.ssh/config."${g_ts}".tmp
-        fi
-        printf 'Include ~/.ssh/config.d/bnna.d/*.sshconfig\n\n' >> \
-            ~/.ssh/config."${g_ts}".tmp
-        cat ~/.ssh/config."${g_ts}".bak >> ~/.ssh/config."${g_ts}".tmp
-        chmod 0600 ~/.ssh/config."${g_ts}".tmp
-        mv ~/.ssh/config."${g_ts}".tmp ~/.ssh/config
+	if ! grep -q 'Include.*bnna' ~/.ssh/config; then
+		cp -RPp ~/.ssh/config ~/.ssh/config."${g_ts}".bak
+		if ! grep -q 'Include.*config\.d' ~/.ssh/config; then
+			printf 'Include ~/.ssh/config.d/*.sshconfig\n' >> \
+				~/.ssh/config."${g_ts}".tmp
+		fi
+		printf 'Include ~/.ssh/config.d/bnna.d/*.sshconfig\n\n' >> \
+			~/.ssh/config."${g_ts}".tmp
+		cat ~/.ssh/config."${g_ts}".bak >> ~/.ssh/config."${g_ts}".tmp
+		chmod 0600 ~/.ssh/config."${g_ts}".tmp
+		mv ~/.ssh/config."${g_ts}".tmp ~/.ssh/config
 
-        if ! grep -q 'Include.*config\.d' ~/.ssh/config."${g_ts}".bak; then
-            echo "    added Include ~/.ssh/config.d/*.sshconfig to ~/.ssh/config"
-        fi
-        if ! grep -q 'Include.*config\.d' ~/.ssh/config."${g_ts}".bak; then
-            echo "    added Include ~/.ssh/config.d/bnna.d/*.sshconfig to ~/.ssh/config"
-        fi
-    fi
+		if ! grep -q 'Include.*config\.d' ~/.ssh/config."${g_ts}".bak; then
+			echo "    added Include ~/.ssh/config.d/*.sshconfig to ~/.ssh/config"
+		fi
+		if ! grep -q 'Include.*config\.d' ~/.ssh/config."${g_ts}".bak; then
+			echo "    added Include ~/.ssh/config.d/bnna.d/*.sshconfig to ~/.ssh/config"
+		fi
+	fi
 ); }
 
 fn_show_ssh_config() { (
-    my_lxc_ip="${1}"
-    my_lxc_domain="${2}"
-    my_lxc_sub="$(echo "${my_lxc_domain}" | cut -d'.' -f1)"
+	my_lxc_ip="${1}"
+	my_lxc_domain="${2}"
+	my_lxc_sub="$(echo "${my_lxc_domain}" | cut -d'.' -f1)"
 
-    fn_ssh_config_init
+	fn_ssh_config_init
 
-    b_bnnad="${HOME}/.ssh/config.d/bnna.d"
-    if ! test -d "${b_bnnad}"; then
-        b_bnnad="$(find ~/.ssh/ -type d -iname 'bnna' | head -n 1)"
-    fi
+	b_bnnad="${HOME}/.ssh/config.d/bnna.d"
+	if ! test -d "${b_bnnad}"; then
+		b_bnnad="$(find ~/.ssh/ -type d -iname 'bnna' | head -n 1)"
+	fi
 
-    #shellcheck disable=SC2016
-    {
-        echo "Host ${my_lxc_sub} ${my_lxc_domain}"
-        echo "    # Internal IP: ${my_lxc_ip}"
-        echo "    Hostname ${my_lxc_domain}"
-        echo '    User app'
-        echo '    ProxyCommand sclient --alpn ssh %h'
-        echo ''
-    } > "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new"
-    chmod 0600 "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new"
-    if test -e "${b_bnnad}"/"${my_lxc_sub}.sshconfig"; then
-        if ! diff -w "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig" > /dev/null; then
-            mv "${b_bnnad}/${my_lxc_sub}.sshconfig" "${b_bnnad}/${my_lxc_sub}.${g_ts}.old"
-            echo "    backed up ${b_bnnad}/${my_lxc_sub}.sshconfig"
-            echo "           as ${my_lxc_sub}.${g_ts}.old"
-        fi
-        mv "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig"
-    else
-        mv "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig"
-        echo "    created ${b_bnnad}/${my_lxc_sub}.sshconfig"
-    fi
-    echo '    done'
+	#shellcheck disable=SC2016
+	{
+		echo "Host ${my_lxc_sub} ${my_lxc_domain}"
+		echo "    # Internal IP: ${my_lxc_ip}"
+		echo "    Hostname ${my_lxc_domain}"
+		echo '    User app'
+		echo '    ProxyCommand sclient --alpn ssh %h'
+		echo ''
+	} > "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new"
+	chmod 0600 "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new"
+	if test -e "${b_bnnad}"/"${my_lxc_sub}.sshconfig"; then
+		if ! diff -w "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig" > /dev/null; then
+			mv "${b_bnnad}/${my_lxc_sub}.sshconfig" "${b_bnnad}/${my_lxc_sub}.${g_ts}.old"
+			echo "    backed up ${b_bnnad}/${my_lxc_sub}.sshconfig"
+			echo "           as ${my_lxc_sub}.${g_ts}.old"
+		fi
+		mv "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig"
+	else
+		mv "${b_bnnad}"/"${my_lxc_sub}.${g_ts}.new" "${b_bnnad}"/"${my_lxc_sub}.sshconfig"
+		echo "    created ${b_bnnad}/${my_lxc_sub}.sshconfig"
+	fi
+	echo '    done'
 
-    echo ""
-    echo "TO FINISH"
-    echo ""
-    echo "1. If the default 'app' user doesn't already exist, add it:"
-    echo ""
-    echo "    ssh root@${my_lxc_domain} 'wget -O - https://webi.sh/ssh-adduser | sh' > ${my_lxc_domain}.new-user.log"
-    echo ""
-    echo "2. Enjoy!"
-    echo ""
-    echo "    ssh ${my_lxc_sub}"
-    echo ""
-    echo "You're NOT DONE yet. See above ^^"
+	echo ""
+	echo "TO FINISH"
+	echo ""
+	echo "1. If the default 'app' user doesn't already exist, add it:"
+	echo ""
+	echo "    ssh root@${my_lxc_domain} 'wget -O - https://webi.sh/ssh-adduser | sh' > ${my_lxc_domain}.new-user.log"
+	echo ""
+	echo "2. Enjoy!"
+	echo ""
+	echo "    ssh ${my_lxc_sub}"
+	echo ""
+	echo "You're NOT DONE yet. See above ^^"
 ); }
 
 main "${@:-}"

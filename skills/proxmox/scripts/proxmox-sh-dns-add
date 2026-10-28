@@ -85,8 +85,8 @@ fn_print_context() {
 		printf 'domainpanel\tavailable\n'
 
 		# List managed zones so agent knows which domains it can create records for
-		b_zones="$(cd ~/Agents/domainpanel && go run ./cmd/domainpanel/ -records -tsv 2>/dev/null \
-			| cut -f1 | sort -u | grep -v '^zone$')" || true
+		b_zones="$(cd ~/Agents/domainpanel && go run ./cmd/domainpanel/ -records -tsv 2> /dev/null |
+			cut -f1 | sort -u | grep -v '^zone$')" || true
 		if test -n "${b_zones}"; then
 			printf 'zones\t%s\n' "$(echo "${b_zones}" | tr '\n' ',' | sed 's/,$//')"
 
@@ -94,12 +94,12 @@ fn_print_context() {
 			b_matched=false
 			for b_zone in ${b_zones}; do
 				case "${a_friendly}" in
-				"${b_zone}" | *".${b_zone}")
-					printf 'zone_match\t%s\n' "${b_zone}"
-					echo "# AGENT: domain is in managed zone '${b_zone}'. Records can be created automatically."
-					b_matched=true
-					break
-					;;
+					"${b_zone}" | *".${b_zone}")
+						printf 'zone_match\t%s\n' "${b_zone}"
+						echo "# AGENT: domain is in managed zone '${b_zone}'. Records can be created automatically."
+						b_matched=true
+						break
+						;;
 				esac
 			done
 			if ! "${b_matched}"; then
@@ -144,29 +144,29 @@ main() {
 
 	while test -n "${1:-}"; do
 		case "${1}" in
-		--apex)
-			g_apex=true
-			;;
-		--help | -help | help)
-			fn_usage
-			return 0
-			;;
-		-*)
-			echo "Unknown flag: ${1}" >&2
-			fn_usage >&2
-			return 1
-			;;
-		*)
-			if test -z "${b_friendly}"; then
-				b_friendly="${1}"
-			elif test -z "${b_direct}"; then
-				b_direct="${1}"
-			else
-				echo "ERROR: unexpected argument: ${1}" >&2
+			--apex)
+				g_apex=true
+				;;
+			--help | -help | help)
+				fn_usage
+				return 0
+				;;
+			-*)
+				echo "Unknown flag: ${1}" >&2
 				fn_usage >&2
 				return 1
-			fi
-			;;
+				;;
+			*)
+				if test -z "${b_friendly}"; then
+					b_friendly="${1}"
+				elif test -z "${b_direct}"; then
+					b_direct="${1}"
+				else
+					echo "ERROR: unexpected argument: ${1}" >&2
+					fn_usage >&2
+					return 1
+				fi
+				;;
 		esac
 		shift
 	done

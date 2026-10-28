@@ -428,29 +428,29 @@ fn_usage() {
 main() {
 	while test -n "${1:-}"; do
 		case "${1}" in
-		--detail)
-			g_detail=true
-			;;
-		--env)
-			shift
-			g_env_file="${1:-}"
-			if test -z "${g_env_file}"; then
-				echo "ERROR: --env requires a file path" >&2
+			--detail)
+				g_detail=true
+				;;
+			--env)
+				shift
+				g_env_file="${1:-}"
+				if test -z "${g_env_file}"; then
+					echo "ERROR: --env requires a file path" >&2
+					echo ""
+					fn_usage >&2
+					return 1
+				fi
+				;;
+			--help | -help | help)
+				fn_usage
+				return 0
+				;;
+			*)
+				echo "Unknown flag: ${1}" >&2
 				echo ""
 				fn_usage >&2
 				return 1
-			fi
-			;;
-		--help | -help | help)
-			fn_usage
-			return 0
-			;;
-		*)
-			echo "Unknown flag: ${1}" >&2
-			echo ""
-			fn_usage >&2
-			return 1
-			;;
+				;;
 		esac
 		shift
 	done

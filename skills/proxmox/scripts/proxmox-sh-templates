@@ -35,26 +35,26 @@ fn_usage() {
 main() {
 	while test -n "${1:-}"; do
 		case "${1}" in
-		--env)
-			shift
-			g_env_file="${1:-}"
-			if test -z "${g_env_file}"; then
-				echo "ERROR: --env requires a file path" >&2
+			--env)
+				shift
+				g_env_file="${1:-}"
+				if test -z "${g_env_file}"; then
+					echo "ERROR: --env requires a file path" >&2
+					echo ""
+					fn_usage >&2
+					return 1
+				fi
+				;;
+			--help | -help | help)
+				fn_usage
+				return 0
+				;;
+			*)
+				echo "Unknown argument: ${1}" >&2
 				echo ""
 				fn_usage >&2
 				return 1
-			fi
-			;;
-		--help | -help | help)
-			fn_usage
-			return 0
-			;;
-		*)
-			echo "Unknown argument: ${1}" >&2
-			echo ""
-			fn_usage >&2
-			return 1
-			;;
+				;;
 		esac
 		shift
 	done
@@ -111,8 +111,8 @@ main() {
 	b_all_volids=""
 	for b_stor in ${b_tmpl_storages}; do
 		b_content="$(${b_curl} -H "${b_auth}" \
-			"${b_base_url}/nodes/${b_node}/storage/${b_stor}/content?content=vztmpl" 2>/dev/null)" || continue
-		b_volids="$(echo "${b_content}" | jq -r '.data[].volid' 2>/dev/null)" || continue
+			"${b_base_url}/nodes/${b_node}/storage/${b_stor}/content?content=vztmpl" 2> /dev/null)" || continue
+		b_volids="$(echo "${b_content}" | jq -r '.data[].volid' 2> /dev/null)" || continue
 		if test -n "${b_volids}"; then
 			if test -n "${b_all_volids}"; then
 				b_all_volids="$(printf '%s\n%s' "${b_all_volids}" "${b_volids}")"
@@ -143,16 +143,16 @@ main() {
 		# Detect init system
 		b_init="unknown"
 		case "${b_tmpl}" in
-		*ubuntu* | *debian*) b_init="systemd" ;;
-		*alpine*) b_init="openrc" ;;
-		*centos* | *rocky* | *fedora* | *almalinux*) b_init="systemd" ;;
-		*devuan*) b_init="sysvinit" ;;
+			*ubuntu* | *debian*) b_init="systemd" ;;
+			*alpine*) b_init="openrc" ;;
+			*centos* | *rocky* | *fedora* | *almalinux*) b_init="systemd" ;;
+			*devuan*) b_init="sysvinit" ;;
 		esac
 
 		# Detect variant
 		b_variant="standard"
 		case "${b_tmpl}" in
-		*bnna*) b_variant="bnna" ;;
+			*bnna*) b_variant="bnna" ;;
 		esac
 
 		# Mark default

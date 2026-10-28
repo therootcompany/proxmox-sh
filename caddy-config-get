@@ -3,49 +3,49 @@ set -e
 set -u
 
 if test -e ~/.config/caddy-sh/default.env; then
-    # shellcheck disable=SC1090
-    . ~/.config/caddy-sh/default.env
+	# shellcheck disable=SC1090
+	. ~/.config/caddy-sh/default.env
 fi
 
 if test -z "${CADDY_HOST:-}" ||
-    test -z "${CADDY_USER:-}" ||
-    test -z "${CADDY_PASS:-}"; then
-    echo ""
-    echo "Error: Set CADDY_HOST, CADDY_USER, and CADDY_PASS in '~/.config/caddy-sh/env'"
-    echo ""
-    exit 1
+	test -z "${CADDY_USER:-}" ||
+	test -z "${CADDY_PASS:-}"; then
+	echo ""
+	echo "Error: Set CADDY_HOST, CADDY_USER, and CADDY_PASS in '~/.config/caddy-sh/env'"
+	echo ""
+	exit 1
 fi
 
 fn_get_config() { (
-    curl -fsS --proto '=https' --tlsv1.2 \
-        -u "${CADDY_USER}:${CADDY_PASS}" \
-        "${CADDY_HOST}/config/" | jq
+	curl -fsS --proto '=https' --tlsv1.2 \
+		-u "${CADDY_USER}:${CADDY_PASS}" \
+		"${CADDY_HOST}/config/" | jq
 ); }
 
 main() { (
-    if test "help" = "${1:-}" ||
-        test "--help" = "${1:-}" ||
-        test -n "${1:-}"; then
+	if test "help" = "${1:-}" ||
+		test "--help" = "${1:-}" ||
+		test -n "${1:-}"; then
 
-        echo ""
-        echo "USAGE"
-        echo "    caddy-config-get"
-        echo ""
-        echo "EXAMPLES"
-        echo "    caddy-config-get"
-        echo ""
-        echo "IMPORTANT:"
-        echo "    BAD:  caddy run --envfile ~/.config/caddy-sh/env --config ./caddy.json"
-        echo "    GOOD: caddy run --envfile ~/.config/caddy-sh/env --resume"
-        echo ""
-        echo "Changes do NOT persist by default!"
-        echo ""
+		echo ""
+		echo "USAGE"
+		echo "    caddy-config-get"
+		echo ""
+		echo "EXAMPLES"
+		echo "    caddy-config-get"
+		echo ""
+		echo "IMPORTANT:"
+		echo "    BAD:  caddy run --envfile ~/.config/caddy-sh/env --config ./caddy.json"
+		echo "    GOOD: caddy run --envfile ~/.config/caddy-sh/env --resume"
+		echo ""
+		echo "Changes do NOT persist by default!"
+		echo ""
 
-        exit 1
-    fi
+		exit 1
+	fi
 
-    echo 'Getting Admin Config...'
-    fn_get_config
+	echo 'Getting Admin Config...'
+	fn_get_config
 ); }
 
 main "${@:-}"

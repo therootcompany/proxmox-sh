@@ -47,7 +47,7 @@ fn_try_ssh() {
 	ssh -o ConnectTimeout=5 \
 		-o StrictHostKeyChecking=accept-new \
 		-o BatchMode=yes \
-		"${a_user}@${a_host}" 'hostname' 2>/dev/null
+		"${a_user}@${a_host}" 'hostname' 2> /dev/null
 }
 
 fn_try_users() {
@@ -98,16 +98,16 @@ fn_wait_dns() {
 
 main() {
 	case "${1:-}" in
-	--help | -help | help)
-		fn_usage
-		return 0
-		;;
-	"")
-		echo "ERROR: direct-ip-domain required" >&2
-		echo ""
-		fn_usage >&2
-		return 1
-		;;
+		--help | -help | help)
+			fn_usage
+			return 0
+			;;
+		"")
+			echo "ERROR: direct-ip-domain required" >&2
+			echo ""
+			fn_usage >&2
+			return 1
+			;;
 	esac
 
 	b_host="${1}"

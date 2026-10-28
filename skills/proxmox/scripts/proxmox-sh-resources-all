@@ -50,20 +50,20 @@ fn_scan_profile() {
 
 main() {
 	case "${1:-}" in
-	--help | -help | help)
-		fn_usage
-		return 0
-		;;
-	-* | ?*)
-		if test -d "${1}"; then
-			g_config_dir="${1}"
-		else
-			echo "Unknown argument: ${1}" >&2
-			echo ""
-			fn_usage >&2
-			return 1
-		fi
-		;;
+		--help | -help | help)
+			fn_usage
+			return 0
+			;;
+		-* | ?*)
+			if test -d "${1}"; then
+				g_config_dir="${1}"
+			else
+				echo "Unknown argument: ${1}" >&2
+				echo ""
+				fn_usage >&2
+				return 1
+			fi
+			;;
 	esac
 
 	if test -z "${g_config_dir}"; then
@@ -86,10 +86,10 @@ main() {
 			return 1
 		fi
 		case "${b_name}" in
-		current.env | example.env)
-			g_skip_count=$((g_skip_count + 1))
-			continue
-			;;
+			current.env | example.env)
+				g_skip_count=$((g_skip_count + 1))
+				continue
+				;;
 		esac
 		b_profile_count=$((b_profile_count + 1))
 		fn_scan_profile "${b_env}"
