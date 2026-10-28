@@ -38,7 +38,7 @@ else
 fi
 my_curl="curl -k --max-time 15 -fsSL"
 
-fn_shutdown() { (
+fn_shutdown() (
 	my_ctid="${1:-}"
 	my_url="${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc/${my_ctid}/status/shutdown"
 	echo 2>&1 "POST ${my_url}"
@@ -46,9 +46,9 @@ fn_shutdown() { (
 		-X POST \
 		"${my_url}" |
 		jq '.'
-); }
+)
 
-fn_wait_status() { (
+fn_wait_status() (
 	my_task_id_raw="${1}"
 	my_check_count="${2:-1}"
 
@@ -83,9 +83,9 @@ fn_wait_status() { (
 	fi
 
 	echo "${my_task_result}" | jq '.'
-); }
+)
 
-main() { (
+main() (
 	my_ctid="${1:-}"
 
 	if test -z "${my_ctid:-}"; then
@@ -106,6 +106,6 @@ main() { (
 	)"
 	echo "Waiting for ${my_task_id}..."
 	fn_wait_status "${my_task_id}"
-); }
+)
 
 main "${@:-}"

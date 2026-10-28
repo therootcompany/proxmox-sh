@@ -78,7 +78,7 @@ if test -n "${PROXMOX_BASE_URL:-}"; then
 else
 	my_base_url="https://${PROXMOX_HOST}/api2/json"
 fi
-fn_curl() { (
+fn_curl() (
 	b_url="$(fn_curl_last_arg "$@")"
 	b_resp_file="$(mktemp)"
 	trap 'rm -f "${b_resp_file}"' EXIT
@@ -113,30 +113,30 @@ fn_curl() { (
 	fi
 
 	cat "${b_resp_file}"
-); }
+)
 
-fn_curl_last_arg() { (
+fn_curl_last_arg() (
 	while test "$#" -gt 1; do
 		shift
 	done
 	echo "${1}"
-); }
+)
 
-fn_discover() { (
+fn_discover() (
 	echo "${my_base_url}/"
 	fn_curl -H "${my_auth}" \
 		"${my_base_url}/" |
 		jq '.'
-); }
+)
 
-fn_status() { (
+fn_status() (
 	echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status"
 	fn_curl -H "${my_auth}" \
 		"${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/status" |
 		jq '.' | tee /dev/stderr
-); }
+)
 
-fn_lxc_last_id() { (
+fn_lxc_last_id() (
 	#echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc"
 	my_lxcs="$(
 		fn_curl -H "${my_auth}" \
@@ -148,9 +148,9 @@ fn_lxc_last_id() { (
 	)"
 	my_lxc_next_id="$((my_lxc_last_id + 1))"
 	echo "${my_lxc_next_id}"
-); }
+)
 
-fn_resources_next_index() { (
+fn_resources_next_index() (
 	my_prefix="${1}"
 
 	# Or https://192.168.0.101:8006/api2/json/cluster/nextid ?
@@ -197,9 +197,9 @@ fn_resources_next_index() { (
 	done
 
 	echo "${my_next}"
-); }
+)
 
-fn_ssh_keys() { (
+fn_ssh_keys() (
 	my_key_uri="${1:-}"
 
 	if test -z "${my_key_uri}"; then
@@ -240,9 +240,9 @@ fn_ssh_keys() { (
 	esac
 
 	printf '%s' "${my_keys}" | grep -E '^(ssh|ecdsa)-[a-zA-Z0-9-]+ AAA' || true
-); }
+)
 
-fn_create_lxc() { (
+fn_create_lxc() (
 	# https://192.168.0.3:8006/api2/json/nodes/pve1/lxc
 
 	my_target_node="${1}"
@@ -333,14 +333,14 @@ fn_create_lxc() { (
 	fi
 
 	echo "${my_task_id}"
-); }
+)
 
-fn_ha_groups_list() { (
+fn_ha_groups_list() (
 	fn_curl -H "${my_auth}" \
 		"${my_base_url}/cluster/ha/groups" | jq -r '.data[].group'
-); }
+)
 
-fn_ha_resources_add() { (
+fn_ha_resources_add() (
 	# See POST at <https://pve.proxmox.com/pve-docs/api-viewer/#/cluster/ha/resources>
 	# https://192.168.0.3:8006/api2/json/cluster/ha/resources
 
@@ -362,13 +362,13 @@ fn_ha_resources_add() { (
 		--data-urlencode "max_restart=${my_max_restart}" \
 		--data-urlencode "comment=${my_comment}" |
 		jq -r '.data'
-); }
+)
 
 # Example
 # vlan=1109, suffix=142
 # mac = 00:52:11:09:01:42
 # gw = 10.11.9.1
-fn_id_to_net() { (
+fn_id_to_net() (
 	# assumed to be always 4-digits (1101-1199)
 	my_id_prefix="${1}"
 	# assumed to be less than 4-digits (51-254)
@@ -404,9 +404,9 @@ fn_id_to_net() { (
 		"${my_id_prefix_12}" "${my_id_prefix_34}" "${my_ip_suffix}"
 	printf "gw=10.%s.%s.1" \
 		"${my_id_prefix_12}" "${my_id_prefix_34}"
-); }
+)
 
-fn_wait_status() { (
+fn_wait_status() (
 	my_target_node="${1}"
 	my_task_id_raw="${2}"
 	my_check_count="${3:-1}"
@@ -456,14 +456,14 @@ fn_wait_status() { (
 	fi
 
 	echo "${my_task_result}" | jq '.'
-); }
+)
 
 # TODO
 # https://192.168.0.3:8006/api2/json/pools
 # https://192.168.0.3:8006/api2/json/nodes
 # https://192.168.0.3:8006/api2/json/nodes/pve1/network?type=any_bridge
 
-fn_help() { (
+fn_help() (
 	my_pubkeys="${1:-}"
 
 	echo ""
@@ -492,13 +492,13 @@ fn_help() { (
 			done
 		echo ""
 	fi
-); }
+)
 
-fn_version() { (
+fn_version() (
 	echo "proxmox-create v0.2025.10.23-1"
-); }
+)
 
-fn_show_next() { (
+fn_show_next() (
 	printf "Finding next available IP for vlan%s...\n" "${PROXMOX_ID_PREFIX}"
 	my_id_prefix_1="$(
 		echo "${PROXMOX_ID_PREFIX}" | cut -c-2
@@ -516,9 +516,9 @@ fn_show_next() { (
 	my_ip="10.${my_id_prefix_1}.${my_id_prefix_2}.${my_next_unit}"
 	echo "    ${my_ip}"
 	echo "    255.255.255.0 (/24)"
-); }
+)
 
-main() { (
+main() (
 	my_target_node="${PROXMOX_TARGET_NODE}"
 	my_hostname=''
 	my_pubkeys=''
@@ -860,6 +860,6 @@ main() { (
 		echo ""
 		echo "^^^ HOW TO ACCESS? ^^^"
 	} >&2
-); }
+)
 
 main "${@:-}"

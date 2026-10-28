@@ -38,7 +38,7 @@ else
 fi
 my_curl="curl -k --max-time 15 -fsSL"
 
-fn_destroy() { (
+fn_destroy() (
 	my_ctid="${1:-}"
 	my_url="${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc/${my_ctid}?purge=1&destroy-unreferenced-disks=1"
 	echo 2>&1 "DELETE ${my_url}"
@@ -66,9 +66,9 @@ fn_destroy() { (
 	fi
 
 	echo "${my_task_id}"
-); }
+)
 
-fn_wait_status() { (
+fn_wait_status() (
 	my_task_id_raw="${1}"
 	my_check_count="${2:-1}"
 
@@ -108,9 +108,9 @@ fn_wait_status() { (
 	fi
 
 	echo "${my_task_result}" | jq '.'
-); }
+)
 
-main() { (
+main() (
 	my_ctid="${1:-}"
 
 	if test -z "${my_ctid:-}"; then
@@ -133,6 +133,6 @@ main() { (
 	done
 	# echo "Waiting for ${my_task_id}..."
 	# fn_wait_status "${my_task_id}"
-); }
+)
 
 main "${@:-}"

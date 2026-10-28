@@ -14,13 +14,13 @@ g_ts="$(date '+%F_%H.%M.%S')"
 # CADDY_PASS
 # CADDY_SRV
 
-fn_get_config() { (
+fn_get_config() (
 	curl --fail-with-body -sS --proto '=https' --tlsv1.2 \
 		-u "${CADDY_USER}:${CADDY_PASS}" \
 		"${CADDY_HOST}/config/" | jq
-); }
+)
 
-fn_add_tls_policy() { (
+fn_add_tls_policy() (
 	my_lxc_id="${1:-}"
 	my_lxc_domain="${2:-}"
 
@@ -35,9 +35,9 @@ fn_add_tls_policy() { (
             "subjects": [ "'"${my_lxc_domain}"'" ]
           }]
         '
-); }
+)
 
-fn_add_tls_policy_dns() { (
+fn_add_tls_policy_dns() (
 	my_lxc_id="${1:-}"
 	my_lxc_domain="${2:-}"
 
@@ -70,9 +70,9 @@ fn_add_tls_policy_dns() { (
             ]
           }]
     '
-); }
+)
 
-fn_add_tls_automation() { (
+fn_add_tls_automation() (
 	#my_lxc_id="${1:-}"
 	my_lxc_domain="${2:-}"
 
@@ -82,9 +82,9 @@ fn_add_tls_automation() { (
 		"${CADDY_HOST}/config/apps/tls/certificates/automate/..." \
 		-H "Content-Type: application/json" \
 		--data-binary '["'"${my_lxc_domain}"'"]'
-); }
+)
 
-fn_add_tls_routing() { (
+fn_add_tls_routing() (
 	my_lxc_id="${1:-}"
 	my_lxc_domain="${2:-}"
 	my_lxc_ip="${3:-}"
@@ -127,9 +127,9 @@ fn_add_tls_routing() { (
             }
           ]
         }]'
-); }
+)
 
-fn_add_http_handler() { (
+fn_add_http_handler() (
 	my_lxc_id="${1:-}"
 	my_lxc_domain="${2:-}"
 	my_lxc_ip="${3:-}"
@@ -169,9 +169,9 @@ fn_add_http_handler() { (
           ]
         }]
         '
-); }
+)
 
-fn_add_reverse_proxy_tls() { (
+fn_add_reverse_proxy_tls() (
 	my_lxc_id="${1:-}"
 	my_lxc_domain="${2:-}"
 	my_lxc_ip="${3:-}"
@@ -223,9 +223,9 @@ fn_add_reverse_proxy_tls() { (
           "terminal": true
         }]
         '
-); }
+)
 
-fn_help() { (
+fn_help() (
 	echo ""
 	echo "USAGE"
 	echo "    caddy-add <internal-ip> <domain> [--to-port=3080] [--tls]"
@@ -239,9 +239,9 @@ fn_help() { (
 	echo "    BAD:  caddy run --config ./caddy.json # Will NOT persist!"
 	echo "    GOOD: caddy run --resume"
 	echo ""
-); }
+)
 
-main() { (
+main() (
 	#fn_get_config
 	#return 1
 
@@ -334,9 +334,9 @@ main() { (
 	fi
 
 	fn_show_ssh_config "${my_lxc_ip}" "${my_lxc_domain}"
-); }
+)
 
-fn_ssh_config_init() { (
+fn_ssh_config_init() (
 	echo ''
 	echo 'Checking ~/.ssh/config ...'
 
@@ -375,9 +375,9 @@ fn_ssh_config_init() { (
 			echo "    added Include ~/.ssh/config.d/bnna.d/*.sshconfig to ~/.ssh/config"
 		fi
 	fi
-); }
+)
 
-fn_show_ssh_config() { (
+fn_show_ssh_config() (
 	my_lxc_ip="${1}"
 	my_lxc_domain="${2}"
 	my_lxc_sub="$(echo "${my_lxc_domain}" | cut -d'.' -f1)"
@@ -424,6 +424,6 @@ fn_show_ssh_config() { (
 	echo "    ssh ${my_lxc_sub}"
 	echo ""
 	echo "You're NOT DONE yet. See above ^^"
-); }
+)
 
 main "${@:-}"

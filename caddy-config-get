@@ -16,13 +16,13 @@ if test -z "${CADDY_HOST:-}" ||
 	exit 1
 fi
 
-fn_get_config() { (
+fn_get_config() (
 	curl -fsS --proto '=https' --tlsv1.2 \
 		-u "${CADDY_USER}:${CADDY_PASS}" \
 		"${CADDY_HOST}/config/" | jq
-); }
+)
 
-main() { (
+main() (
 	if test "help" = "${1:-}" ||
 		test "--help" = "${1:-}" ||
 		test -n "${1:-}"; then
@@ -46,6 +46,6 @@ main() { (
 
 	echo 'Getting Admin Config...'
 	fn_get_config
-); }
+)
 
 main "${@:-}"

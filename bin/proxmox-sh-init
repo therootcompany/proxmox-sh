@@ -2,7 +2,7 @@
 set -e
 set -u
 
-fn_init_profile() { (
+fn_init_profile() (
 	my_product="${1:-}"
 
 	mkdir -p ~/.config/"${my_product}"/
@@ -15,7 +15,7 @@ fn_init_profile() { (
 	if ! test -e ~/.config/"${my_product}"/current.env; then
 		~/.local/opt/proxmox-sh/bin/env-switch "${my_product}" 'example'
 	fi
-); }
+)
 
 fn_init_profile 'proxmox-sh'
 fn_init_profile 'caddy-sh'

@@ -2,7 +2,7 @@
 set -e
 set -u
 
-fn_list_envs() { (
+fn_list_envs() (
 	my_current="${1:-}"
 	my_config_dir="${2}"
 
@@ -48,9 +48,9 @@ fn_list_envs() { (
 	echo "" > /dev/tty
 
 	echo "${my_current_new:-}"
-); }
+)
 
-main() { (
+main() (
 	my_config_dir="${1:-}"
 	my_current_new="${2:-}"
 
@@ -156,6 +156,6 @@ main() { (
 		ln -sf "./${my_current_new}" ~/.config/"${my_config_dir}"/current.env
 	fi
 	echo ""
-); }
+)
 
 main "${@:-}"

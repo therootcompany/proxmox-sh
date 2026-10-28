@@ -38,7 +38,7 @@ else
 fi
 my_curl="curl -k --max-time 15 --proto =https --tlsv1.2 -fsS"
 
-fn_lxc_last_id() { (
+fn_lxc_last_id() (
 	#echo "${my_base_url}/nodes/${PROXMOX_TARGET_NODE}/lxc"
 	my_lxcs="$(
 		${my_curl} -H "${my_auth}" \
@@ -50,9 +50,9 @@ fn_lxc_last_id() { (
 	)"
 	my_lxc_next_id="$((my_lxc_last_id + 1))"
 	echo "${my_lxc_next_id}"
-); }
+)
 
-fn_resources_next_id() { (
+fn_resources_next_id() (
 	# Or https://192.168.0.3:8006/api2/json/cluster/nextid ?
 	#echo "${my_base_url}/cluster/resources"
 	my_resources="$(
@@ -68,9 +68,9 @@ fn_resources_next_id() { (
 	)"
 	my_resource_next_id="$((my_resource_last_id + 1))"
 	echo "${my_resource_next_id}"
-); }
+)
 
-fn_ssh_keys() { (
+fn_ssh_keys() (
 	my_key_uri="${1:-}"
 
 	my_keys="${my_key_uri}"
@@ -104,9 +104,9 @@ fn_ssh_keys() { (
 	fi
 
 	printf '%s' "${my_keys}" | grep -v '^#' | grep -E '^(ssh|ecdsa)-[a-zA-Z0-9-]+ AAA'
-); }
+)
 
-main() { (
+main() (
 	my_hostname="${1:-}"
 	my_pubkey="${2:-}"
 	my_pubkeys=""
@@ -142,6 +142,6 @@ main() { (
 
 	./proxmox-create "${my_cidr}" "${my_hostname}" "${my_pubkeys}"
 	./caddy-add "ct${my_next_id}" "${my_hostname}" "${my_ip}"
-); }
+)
 
 main "${@:-}"

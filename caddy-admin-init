@@ -26,7 +26,7 @@ if test -z "${CADDY_USER:-}" ||
 	exit 1
 fi
 
-fn_admin_init() { (
+fn_admin_init() (
 	# my_debug_level="DEBUG"
 	my_debug_level="INFO"
 	my_admin_ip="${1:-}"
@@ -269,9 +269,9 @@ fn_admin_init() { (
 	#   },
 	#   "hash_cache": {}
 	# }
-); }
+)
 
-main() { (
+main() (
 	#fn_get_config
 	#exit 1
 
@@ -300,6 +300,6 @@ main() { (
 
 	echo 'Creating Admin Proxy (with "@id": "caddy_admin_tls_policy")...'
 	fn_admin_init "${my_admin_ip}" "${my_admin_domain}"
-); }
+)
 
 main "${@:-}"
