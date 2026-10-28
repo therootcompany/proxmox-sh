@@ -2,6 +2,10 @@
 set -e
 set -u
 
+fn_version() (
+	echo "proxmox-create v0.2026.10.28-1"
+)
+
 if test -e ~/.config/proxmox-sh/current.env; then
 	# shellcheck disable=SC1090
 	. ~/.config/proxmox-sh/current.env || true
@@ -495,10 +499,6 @@ fn_help() (
 			done
 		echo ""
 	fi
-)
-
-fn_version() (
-	echo "proxmox-create v0.2025.10.23-1"
 )
 
 fn_show_next() (
