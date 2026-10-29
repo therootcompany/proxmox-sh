@@ -282,7 +282,6 @@ fn_create_lxc() (
 	my_bridge="${PROXMOX_VNET:-$PROXMOX_BRIDGE}"
 	my_features='nesting=1'
 
-	my_tmpl_vol="${PROXMOX_TEMPLATE_STORAGE}"
 	my_fs_pool="${PROXMOX_FS_POOL}"
 	my_fs_opts='discard;lazytime;noatime'
 	my_mp0_pool="${PROXMOX_DATA_POOL}"
@@ -306,7 +305,7 @@ fn_create_lxc() (
 			--data-urlencode "pool=${PROXMOX_RESOURCE_POOL}" \
 			--data-urlencode "password=${my_password}" \
 			--data-urlencode "ssh-public-keys=${my_pubkeys}" \
-			--data-urlencode "ostemplate=${my_tmpl_vol}:${my_os_tmpl}" \
+			--data-urlencode "ostemplate=${my_os_tmpl}" \
 			--data-urlencode "rootfs=${my_fs_pool}:${my_fs_size},mountoptions=${my_fs_opts}" \
 			--data-urlencode "mp0=${my_mp0_pool}:${my_mp0_size},mp=${my_mp0_mnt},mountoptions=${my_mp0_opts},backup=1" \
 			--data-urlencode "cores=${my_cores}" \
@@ -481,7 +480,8 @@ fn_help() (
 	echo ""
 	echo "OPTIONS"
 	echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4"
-	echo "    --os 'alpine23'       # alpine23,20,19,18,17 (bnna), ubuntu24,22 / debian13,12 (standard)"
+	echo "    --os 'alpine23'       # alpine23,20,19,18,17 (bnna), ubuntu24,22 / debian13,12 (standard),"
+	echo "                          # or a template like [storage-name:]vztmpl/alpine-3.23-bnna_....tar.zst"
 	echo "    --vcpus 2             # 1-12 vCPU Cores"
 	echo "    --vcpu-limit 1.5      # max vCPU usage (<= vcpus)"
 	echo "    --ram 512             # 64-24576 MB"
@@ -525,7 +525,7 @@ main() (
 	my_target_node="${PROXMOX_TARGET_NODE}"
 	my_hostname=''
 	my_pubkeys=''
-	my_os=''
+	my_os_tmpl="${PROXMOX_TEMPLATE_STORAGE}:${PROXMOX_TEMPLATE_DEFAULT}"
 	my_vcpus='2'
 	my_vcpu_limit=''
 	my_ram='512'
@@ -592,18 +592,58 @@ main() (
 				;;
 			--os)
 				my_os="${1:-}"
+				shift
+
 				case "${my_os}" in
-					debian13 | debian12) ;;
-					ubuntu24 | ubuntu22 | ubuntu20) ;;
-					alpine23 | alpine20 | alpine19 | alpine18 | alpine17) ;;
-					vztmpl/*) ;;
+					'') ;;
+					vztmpl/* | *:vztmpl/*)
+						my_os_tmpl="${my_os}"
+						;;
+					alpine23)
+						my_os_tmpl='vztmpl/alpine-3.23-bnna_20260116_amd64.tar.zst'
+						;;
+					alpine20)
+						my_os_tmpl='vztmpl/alpine-3.20-bnna_20240908_20241212_amd64.tar.zst'
+						;;
+					alpine19)
+						my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
+						;;
+					alpine18)
+						my_os_tmpl='vztmpl/alpine-3.18-bnna_20230607_20241212_amd64.tar.zst'
+						;;
+					alpine17)
+						my_os_tmpl='vztmpl/alpine-3.17-bnna_20221129_20241212_amd64.tar.zst'
+						;;
+					debian13)
+						my_os_tmpl='vztmpl/debian-13-standard_13.6-1_amd64.tar.zst'
+						;;
+					debian12)
+						my_os_tmpl='vztmpl/debian-12-standard_12.12-1_amd64.tar.zst'
+						;;
+					ubuntu24)
+						my_os_tmpl='vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
+						;;
+					ubuntu22)
+						my_os_tmpl='vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst'
+						;;
+					ubuntu20)
+						my_os_tmpl='vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz'
+						;;
 					*)
-						echo "ERROR: --os (OS name) must be an OS+version (e.g. 'alpine20', 'ubuntu24'), or template ('vztmpl/ubuntu-24.04-standard.tar.zst'" >&2
-						fn_help >&2
+						{
+							echo "ERROR: --os (OS name) must be a supported OS alias in the form of 'alpine23', or a template in the form of 'vztmpl/debian-13-standard_13.6-1_amd64.tar.zst' or 'storage-name:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst'"
+							fn_help
+						} >&2
 						return 1
 						;;
 				esac
-				shift
+
+				case "${my_os_tmpl}" in
+					*:vztmpl/*) ;;
+					*)
+						my_os_tmpl="${PROXMOX_TEMPLATE_STORAGE}:${my_os_tmpl}"
+						;;
+				esac
 				;;
 			--vcpus)
 				my_vcpus="${1:-}"
@@ -728,48 +768,6 @@ main() (
 			cut -d'/' -f1
 	)"
 
-	my_os_tmpl="${PROXMOX_TEMPLATE_DEFAULT}"
-	case "${my_os}" in
-		'') ;;
-		vztmpl/*)
-			my_os_tmpl="${my_os}"
-			;;
-		alpine23)
-			my_os_tmpl='vztmpl/alpine-3.23-bnna_20260116_amd64.tar.zst'
-			;;
-		alpine20)
-			my_os_tmpl='vztmpl/alpine-3.20-bnna_20240908_20241212_amd64.tar.zst'
-			;;
-		alpine19)
-			my_os_tmpl='vztmpl/alpine-3.19-bnna_20240207_20241212_amd64.tar.zst'
-			;;
-		alpine18)
-			my_os_tmpl='vztmpl/alpine-3.18-bnna_20230607_20241212_amd64.tar.zst'
-			;;
-		alpine17)
-			my_os_tmpl='vztmpl/alpine-3.17-bnna_20221129_20241212_amd64.tar.zst'
-			;;
-		debian13)
-			my_os_tmpl='vztmpl/debian-13-standard_13.6-1_amd64.tar.zst'
-			;;
-		debian12)
-			my_os_tmpl='vztmpl/debian-12-standard_12.12-1_amd64.tar.zst'
-			;;
-		ubuntu24)
-			my_os_tmpl='vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
-			;;
-		ubuntu22)
-			my_os_tmpl='vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst'
-			;;
-		ubuntu20)
-			my_os_tmpl='vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz'
-			;;
-		*)
-			echo "unknown OS template '${my_os}' - should be a name like 'alpine20' or a 'vztmpl/'-prefixed tarball path like 'vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst')"
-			return 1
-			;;
-	esac
-
 	# This adds leading zeros
 	# first: 1 => 1001
 	my_3digit="$((my_next_unit + 1000))"
@@ -787,7 +785,7 @@ main() (
 			echo "    HA Group:      NOT ENABLED"
 		fi
 		echo ""
-		echo "    OS:            ${my_os}"
+		echo "    OS:            ${my_os_tmpl}"
 		echo "    RAM:           ${my_ram}MB"
 		echo "    / (rootfs):    ${my_os_storage}GB"
 		echo "    /mnt/storage:  ${my_extra_storage}GB"
