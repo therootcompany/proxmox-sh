@@ -3,7 +3,7 @@ set -e
 set -u
 
 fn_version() (
-	echo "proxmox-create v0.2026.10.28-1"
+	echo "proxmox-create v0.2026.10.29-1"
 )
 
 if test -e ~/.config/proxmox-sh/current.env; then
