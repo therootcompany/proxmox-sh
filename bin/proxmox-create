@@ -571,11 +571,6 @@ main() (
 				fn_help >&2
 				return 0
 				;;
-			--nesting)
-				echo "ERROR --nesting is not supported yet" >&2
-				return 1
-				#my_features="nesting=1"
-				;;
 			--target-node)
 				my_target_node="${1:-}"
 				if test -n "${PROXMOX_HA_ENABLE:-}"; then
