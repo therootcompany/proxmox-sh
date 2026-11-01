@@ -82,6 +82,7 @@ if test -n "${PROXMOX_BASE_URL:-}"; then
 else
 	my_base_url="https://${PROXMOX_HOST}/api2/json"
 fi
+
 fn_curl() (
 	b_url="$(fn_curl_last_arg "$@")"
 	b_resp_file="$(mktemp)"
@@ -812,7 +813,7 @@ main() (
 			return 1
 		fi
 		if fn_ha_resources_add "${my_vmid}" "${my_ha_group}" > /dev/null; then
-			echo >&2 "(also added '${my_vmid}' to HA Group '${my_ha_group}'"
+			echo >&2 "(also added '${my_vmid}' to HA Group '${my_ha_group}')"
 		else
 			echo >&2 "WARN: did not add '${my_vmid}' to HA Group '${my_ha_group}'"
 		fi
