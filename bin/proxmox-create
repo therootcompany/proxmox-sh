@@ -480,6 +480,7 @@ fn_help() (
 	echo "    proxmox-create 'lxc-101-example' ~/.ssh/id_rsa.pub"
 	echo ""
 	echo "OPTIONS"
+	echo "    --env 'current'       # full env path, or name of any in ~/.config/proxmox-sh/"
 	echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4"
 	echo "    --os 'alpine23'       # alpine23,20,19,18,17 (bnna), ubuntu24,22 / debian13,12 (standard),"
 	echo "                          # or a template like [storage-name:]vztmpl/alpine-3.23-bnna_....tar.zst"
