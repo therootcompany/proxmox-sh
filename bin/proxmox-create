@@ -660,9 +660,9 @@ main() (
 				;;
 			--ram)
 				my_ram="${1:-}"
-				if test "${my_ram}" -lt 32 ||
+				if test "${my_ram}" -lt 64 ||
 					test "${my_ram}" -gt 24576; then
-					echo "ERROR: --ram must be between 32 and 24576 (megabytes)" >&2
+					echo "ERROR: --ram must be between 64 and 24576 (megabytes)" >&2
 					fn_help >&2
 					return 1
 				fi
@@ -750,9 +750,6 @@ main() (
 			;;
 	esac
 
-	if test -z "${my_vcpus}"; then
-		my_vcpus="${PROXMOX_VCPUS_DEFAULT:-2}"
-	fi
 	if test -z "${my_vcpu_limit}"; then
 		my_vcpu_limit="${my_vcpus}"
 	fi
