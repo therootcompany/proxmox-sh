@@ -341,6 +341,251 @@ fn_create_lxc() (
 	echo "${my_task_id}"
 )
 
+fn_vm_check_image() (
+	# my_volid: <storage>:import/<file>
+	# PVE 9 lists storage content with ?content= (the old ?type= is rejected)
+	my_volid="${1}"
+	my_target_node="${2}"
+	my_img_storage="${my_volid%%:*}"
+	echo "GET ${my_base_url}/nodes/${my_target_node}/storage/${my_img_storage}/content?content=import ..." >> /dev/stderr
+	my_contents="$(
+		fn_curl -H "${my_auth}" \
+			"${my_base_url}/nodes/${my_target_node}/storage/${my_img_storage}/content?content=import"
+	)"
+	if ! echo "${my_contents}" | jq -r '.data[]?.volid' | grep -qx "${my_volid}"; then
+		echo "ERROR: image '${my_volid}' not found on storage '${my_img_storage}'" >&2
+		return 1
+	fi
+	echo "${my_img_storage}"
+)
+
+fn_sshkeys_urlencode() (
+	# PVE applies url-decoding to sshkeys a second time (after the standard
+	# form-decode), so the value must be sent percent-encoded via
+	# --data-urlencode: send raw and PVE rejects it with
+	# "invalid format - invalid urlencoded string".
+	my_out=''
+	while IFS= read -r my_line; do
+		my_enc="$(
+			printf '%s' "${my_line}" |
+				sed -e 's; ;%20;g' -e 's;+;%2B;g' -e 's;/;%2F;g' -e 's;=;%3D;g' -e 's;@;%40;g'
+		)"
+		if test -z "${my_out}"; then
+			my_out="${my_enc}"
+		else
+			my_out="${my_out}%0A${my_enc}"
+		fi
+	done << EOF_KEYS
+${1}
+EOF_KEYS
+	printf '%s' "${my_out}"
+)
+
+fn_create_vm() (
+	# KVM cloud-init VM from a shared-storage import image (qcow2).
+	# Unlike the single LXC POST, this is a fixed multi-call sequence:
+	#   base VM -> cloud-init config (+disk import) -> cloud-init drive
+	#   -> resize + boot order -> EXPLICIT ISO build -> start.
+	# Every call is checked before the next.
+
+	my_target_node="${1}"
+	my_vlan_param=""
+	if test -n "${2:-}"; then
+		my_vlan_param=",tag=${2}"
+	fi
+	my_next_unit="${3}"
+	my_hostname="${4}"
+	my_pubkeys="${5}"
+	my_vm_image="${6}"
+	my_memory="${7}"
+	my_disk_size="${8}"
+	my_cores="${9}"
+	my_cpulimit="${10}"
+	my_vmid="${11}"
+	my_cicustom="${12}"
+	my_ciuser="${13}"
+	my_extra_disk="${14}"
+
+	my_password="$(
+		xxd -l12 -ps /dev/urandom |
+			xxd -r -ps |
+			base64 |
+			tr -d = |
+			tr + - |
+			tr / _
+	)"
+
+	my_search_domain="${PROXMOX_SEARCH_DOMAIN:-}"
+	# PVE VM nameserver must be space-separated (commas render as one entry)
+	my_nameserver="$(echo "${PROXMOX_NAMESERVER:-}" | tr ',' ' ')"
+	my_bridge="${PROXMOX_VNET:-$PROXMOX_BRIDGE}"
+	my_fs_pool="${PROXMOX_FS_POOL}"
+	my_net="$(
+		fn_id_to_net "${PROXMOX_ID_PREFIX}" "${my_next_unit}"
+	)"
+	my_mac="$(echo "${my_net}" | sed -nE 's/^hwaddr=([^,]+),.*/\1/p')"
+	my_ipconfig="$(echo "${my_net}" | sed -nE 's/^hwaddr=[^,]+,//p')"
+
+	# my_cicustom is computed in main() (--civendor flag, image-alias default, or PROXMOX_* env)
+
+	# sshkeys must arrive already urlencoded (see fn_sshkeys_urlencode)
+	my_sshkeys_enc="$(
+		fn_sshkeys_urlencode "${my_pubkeys}"
+	)"
+
+	my_img_storage="$(fn_vm_check_image "${my_vm_image}" "${my_target_node}")" || {
+		echo "ERROR: image check failed" >&2
+		return 1
+	}
+
+	# 1. base VM (onboot=1 goes here; verified in the final config either way)
+	echo "POST ${my_base_url}/nodes/${my_target_node}/qemu ..." >> /dev/stderr
+	my_task_result="$(
+		fn_curl -H "${my_auth}" \
+			-X POST "${my_base_url}/nodes/${my_target_node}/qemu" \
+			--data-urlencode "vmid=${my_vmid}" \
+			--data-urlencode "name=${my_hostname}" \
+			--data-urlencode 'ostype=l26' \
+			--data-urlencode "memory=${my_memory}" \
+			--data-urlencode 'sockets=1' \
+			--data-urlencode "cores=${my_cores}" \
+			--data-urlencode "cpulimit=${my_cpulimit}" \
+			--data-urlencode 'agent=1' \
+			--data-urlencode 'scsihw=virtio-scsi-single' \
+			--data-urlencode 'onboot=1' \
+			--data-urlencode "pool=${PROXMOX_RESOURCE_POOL}" \
+			--data-urlencode "net0=virtio=${my_mac},bridge=${my_bridge}${my_vlan_param},firewall=1"
+	)" || {
+		echo "ERROR: base VM create failed" >&2
+		return 1
+	}
+	my_task_result="$(printf '%s' "${my_task_result}" | jq | tee /dev/stderr)"
+	echo '' >> /dev/stderr
+
+	# 2. cloud-init options + import the image into scsi0 (one call).
+	#    cipassword is set even for keys-only: a locked account refuses
+	#    key auth (Alpine).
+	echo "POST ${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/config (cloudinit+import) ..." >> /dev/stderr
+	set --
+	if test -n "${my_cicustom}"; then
+		set -- --data-urlencode "cicustom=${my_cicustom}"
+	fi
+	if test -n "${my_ciuser}"; then
+		set -- "$@" --data-urlencode "ciuser=${my_ciuser}"
+	fi
+	my_task_result="$(
+		fn_curl -H "${my_auth}" \
+			-X POST "${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/config" \
+			--data-urlencode "scsi0=${my_fs_pool}:0,import-from=${my_vm_image},format=raw" \
+			--data-urlencode "ipconfig0=${my_ipconfig}" \
+			--data-urlencode "nameserver=${my_nameserver}" \
+			--data-urlencode "searchdomain=${PROXMOX_ID_PREFIX}.${my_search_domain}" \
+			--data-urlencode "sshkeys=${my_sshkeys_enc}" \
+			--data-urlencode "cipassword=${my_password}" \
+			"$@"
+	)" || {
+		echo "ERROR: cloud-init config failed" >&2
+		return 1
+	}
+	my_task_result="$(printf '%s' "${my_task_result}" | jq | tee /dev/stderr)"
+	echo '' >> /dev/stderr
+
+	# 3. cloud-init drive — distinct call; the short lazy form allocates
+	#    the volume and builds the first ISO
+	echo "POST ${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/config (ide0) ..." >> /dev/stderr
+	my_task_result="$(
+		fn_curl -H "${my_auth}" \
+			-X POST "${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/config" \
+			--data-urlencode "ide0=${my_fs_pool}:cloudinit,media=cdrom"
+	)" || {
+		echo "ERROR: cloud-init drive add failed" >&2
+		return 1
+	}
+	my_task_result="$(printf '%s' "${my_task_result}" | jq | tee /dev/stderr)"
+	echo '' >> /dev/stderr
+
+	# 4. extra storage — plain scsi1 disk at final size from
+	#     PROXMOX_DATA_POOL (same pool as the CT mountpoint); the guest's
+	#     vendor template formats/mounts it at /mnt/storage
+	echo "POST ${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/config (scsi1) ..." >> /dev/stderr
+	my_task_result="$(
+		fn_curl -H "${my_auth}" \
+			-X POST "${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/config" \
+			--data-urlencode "scsi1=${PROXMOX_DATA_POOL}:${my_extra_disk}"
+	)" || {
+		echo "ERROR: extra disk add failed" >&2
+		return 1
+	}
+	my_task_result="$(printf '%s' "${my_task_result}" | jq | tee /dev/stderr)"
+	echo '' >> /dev/stderr
+
+	# 5. size + boot order
+	echo "PUT ${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/resize ..." >> /dev/stderr
+	my_task_result="$(
+		fn_curl -H "${my_auth}" \
+			-X PUT "${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/resize" \
+			--data-urlencode 'disk=scsi0' \
+			--data-urlencode "size=${my_disk_size}G"
+	)" || {
+		echo "ERROR: disk resize failed" >&2
+		return 1
+	}
+	my_task_result="$(printf '%s' "${my_task_result}" | jq | tee /dev/stderr)"
+	echo "POST ${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/config (boot) ..." >> /dev/stderr
+	my_task_result="$(
+		fn_curl -H "${my_auth}" \
+			-X POST "${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/config" \
+			--data-urlencode 'boot=order=scsi0'
+	)" || {
+		echo "ERROR: boot order set failed" >&2
+		return 1
+	}
+	my_task_result="$(printf '%s' "${my_task_result}" | jq | tee /dev/stderr)"
+	echo '' >> /dev/stderr
+
+	# 6. EXPLICIT ISO build — without this call the ISO is stale, and a
+	#    missing cicustom fails silently (ISO ships without vendor data)
+	echo "PUT ${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/cloudinit ..." >> /dev/stderr
+	my_task_result="$(
+		fn_curl -H "${my_auth}" \
+			-X PUT "${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/cloudinit"
+	)" || {
+		echo "ERROR: cloud-init ISO build failed" >&2
+		return 1
+	}
+	my_task_result="$(printf '%s' "${my_task_result}" | jq | tee /dev/stderr)"
+	echo '' >> /dev/stderr
+
+	# 7. start
+	echo "POST ${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/status/start ..." >> /dev/stderr
+	my_task_result="$(
+		fn_curl -H "${my_auth}" \
+			-X POST "${my_base_url}/nodes/${my_target_node}/qemu/${my_vmid}/status/start"
+	)" || {
+		echo "ERROR: VM start failed" >&2
+		return 1
+	}
+	my_task_result="$(printf '%s' "${my_task_result}" | jq | tee /dev/stderr)"
+	echo '' >> /dev/stderr
+
+	my_task_id="$(
+		echo "${my_task_result}" |
+			jq -r '.data' |
+			grep '^UPID:' || true
+	)"
+
+	if test "${my_task_id}" = "null"; then
+		echo ""
+		echo "${my_task_result}" | jq '.'
+		echo ""
+		echo "Error: Start failed"
+		echo ""
+		exit 1
+	fi
+
+	echo "${my_task_id}"
+)
+
 fn_ha_groups_list() (
 	fn_curl -H "${my_auth}" \
 		"${my_base_url}/cluster/ha/groups" | jq -r '.data[].group'
@@ -482,12 +727,29 @@ fn_help() (
 	echo "    proxmox-create --env 'dev' --os debian13 \\"
 	echo "        --ram 1024 'log-server'"
 	echo ""
+	echo "    proxmox-create --env 'dev' --kvm debian13 'web-01'"
+	echo ""
+	echo "    proxmox-create --env 'dev' --kvm alpine24 --ciuser app 'web-01'"
+	echo ""
+	echo "    proxmox-create --env 'dev' --import 'sharedstor:import/debian-13-genericcloud-amd64.qcow2' \\"
+	echo "        'web-01'"
+	echo ""
 	echo "OPTIONS"
 	echo "    --env 'dev'           # name resolves to ~/.config/proxmox-sh/<name>.env (default: current.env)"
 	echo "    --target-node 'pve1'  # pve1, pve2, pve3, or pve4 (default: PROXMOX_TARGET_NODE from env)"
-	echo "    --os 'alpine23'       # alpine23,20,19,18,17 (bnna), ubuntu24,22 / debian13,12 (standard),"
+	echo "    --os 'alpine23'       # LXC container: an OS alias in the form of 'alpine23'"
+	echo "                          # (alpine23,20,19,18,17 bnna / ubuntu24,22,20 / debian13,12 standard)"
 	echo "                          # or a template: [storage:]vztmpl/alpine-3.23-bnna_....tar.zst"
-	echo "                          # (default: PROXMOX_TEMPLATE_STORAGE:PROXMOX_TEMPLATE_DEFAULT from env)"
+	echo "                          # (aliases: --ct, --template; default: PROXMOX_TEMPLATE_STORAGE:PROXMOX_TEMPLATE_DEFAULT from env)"
+	echo "    --kvm 'debian13'      # KVM cloud-init VM: an image alias in the form of 'debian13'"
+	echo "                          # (debian13, debian12, alpine24, ubuntu24)"
+	echo "                          # or an image: [storage:]import/<file>.qcow2 (alias: --import)"
+	echo "    --civendor 'debian13' # vendor template (cicustom vendor=): the --kvm <image>"
+	echo "                          # (debian13, debian12, alpine24, ubuntu24), '<file>.yaml',"
+	echo "                          # 'storage-name:snippets/<file>.yaml', or 'none'"
+	echo "                          # (default: follows --kvm: civendor-<image>.yaml from PROXMOX_SNIPPET_STORAGE)"
+	echo "    --ciuser 'app'       # cloud-init user to create and log in as (default: app)"
+	echo "    --os/--ct/--template and --kvm/--import are mutually exclusive (CT or VM)"
 	echo "    --vcpus 2             # range: 1-12"
 	echo "    --vcpu-limit 1.5      # range: 0.01 to --vcpus (default: --vcpus, i.e. no throttling)"
 	echo "    --ram 512             # range: 64-24576 MB"
@@ -533,6 +795,13 @@ main() (
 	my_hostname=''
 	my_pubkeys=''
 	my_os_tmpl=''
+	my_vm=''
+	my_vm_image=''
+	my_vm_alias=''
+	my_civendor=''
+	my_cicustom=''
+	my_ciuser=''
+	my_os_given=''
 	my_vcpus='2'
 	my_vcpu_limit=''
 	my_ram='512'
@@ -573,6 +842,74 @@ main() (
 						;;
 				esac
 				;;
+			--kvm | --import)
+				my_vm_image="${1:-}"
+				if test -n "${my_vm_image}"; then
+					shift
+				fi
+				case "${my_vm_image}" in
+					import/* | *:import/*) ;;
+					debian13)
+						my_vm_image='import/debian-13-genericcloud-amd64.qcow2'
+						my_vm_alias='debian13'
+						;;
+					debian12)
+						my_vm_image='import/debian-12-genericcloud-amd64.qcow2'
+						my_vm_alias='debian12'
+						;;
+					alpine24)
+						my_vm_image='import/alpine-3.24.3-x86_64-cloudinit-r0.qcow2'
+						my_vm_alias='alpine24'
+						;;
+					ubuntu24)
+						my_vm_image='import/noble-server-cloudimg-amd64.qcow2'
+						my_vm_alias='ubuntu24'
+						;;
+					*)
+						{
+							echo "ERROR: --kvm (alias: --import) must be an image alias in the form of 'debian13' (debian13, debian12, alpine24, ubuntu24), or an image in the form of 'import/<file>.qcow2' or 'storage-name:import/<file>.qcow2'"
+							fn_help
+						} >&2
+						return 1
+						;;
+				esac
+				my_vm='1'
+				;;
+			--iso)
+				# undocumented; takes a value and errors
+				if test -n "${1:-}"; then
+					shift
+				fi
+				echo "ERROR: --iso is not supported" >&2
+				return 1
+				;;
+			--ciuser)
+				my_ciuser="${1:-}"
+				if test -n "${my_ciuser}"; then
+					shift
+				fi
+				;;
+			--civendor)
+				my_civendor="${1:-}"
+				if test -n "${my_civendor}"; then
+					shift
+				fi
+				case "${my_civendor}" in
+					none) ;;
+					*:snippets/*) ;;
+					*.*) ;;
+					debian13 | debian12 | alpine24 | ubuntu24 | alpine24-wan)
+						my_civendor="civendor-${my_civendor}.yaml"
+						;;
+					*)
+						{
+							echo "ERROR: --civendor must be an image name (debian13, debian12, alpine24, ubuntu24), 'none', a file '<file>.yaml', or 'storage-name:snippets/<file>.yaml'"
+							fn_help
+						} >&2
+						return 1
+						;;
+				esac
+				;;
 			--target-node)
 				my_target_node="${1:-}"
 				case "${my_target_node}" in
@@ -585,8 +922,9 @@ main() (
 				esac
 				shift
 				;;
-			--os)
+			--ct | --os | --template)
 				my_os="${1:-}"
+				my_os_given='1'
 				shift
 
 				case "${my_os}" in
@@ -626,7 +964,7 @@ main() (
 						;;
 					*)
 						{
-							echo "ERROR: --os (OS name) must be a supported OS alias in the form of 'alpine23', or a template in the form of 'vztmpl/debian-13-standard_13.6-1_amd64.tar.zst' or 'storage-name:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst'"
+							echo "ERROR: --os (aliases --ct/--template) must be an OS alias in the form of 'alpine23', or a template in the form of 'vztmpl/debian-13-standard_13.6-1_amd64.tar.zst' or 'storage-name:vztmpl/...'"
 							fn_help
 						} >&2
 						return 1
@@ -711,6 +1049,11 @@ main() (
 		esac
 	done
 
+	if test -n "${my_os_given}" && test -n "${my_vm}"; then
+		echo "ERROR: --os (aliases --ct/--template) and --kvm (alias --import) are mutually exclusive: create either an LXC container or a KVM VM" >&2
+		fn_help >&2
+		return 1
+	fi
 	: "${my_env:=${HOME}/.config/proxmox-sh/current.env}"
 	if test ! -f "${my_env}"; then
 		if test "${my_env}" = ~/.config/proxmox-sh/current.env; then
@@ -754,6 +1097,46 @@ main() (
 			;;
 	esac
 
+	if test -n "${my_vm}"; then
+		case "${my_vm_image}" in
+			import/*)
+				if test -n "${PROXMOX_IMPORT_STORAGE:-}"; then
+					my_vm_image="${PROXMOX_IMPORT_STORAGE}:${my_vm_image}"
+				else
+					echo "ERROR: image '${my_vm_image}' has no storage; set PROXMOX_IMPORT_STORAGE, or use the full 'storage-name:import/<file>.qcow2' form" >&2
+					fn_help >&2
+					return 1
+				fi
+				;;
+		esac
+	fi
+	# VMs default to an 'app' cloud-init user (PVE's own default is root,
+	# which e.g. Alpine refuses key auth for)
+	if test -n "${my_vm}" && test -z "${my_ciuser}"; then
+		my_ciuser='app'
+	fi
+
+	if test -n "${my_civendor}" && test "${my_civendor}" != "none"; then
+		case "${my_civendor}" in
+			*:snippets/*)
+				my_cicustom="vendor=${my_civendor}"
+				;;
+			*)
+				if test -n "${PROXMOX_SNIPPET_STORAGE:-}"; then
+					my_cicustom="vendor=${PROXMOX_SNIPPET_STORAGE}:snippets/${my_civendor}"
+				else
+					echo "ERROR: civendor '${my_civendor}' has no storage; set PROXMOX_SNIPPET_STORAGE, or use the full 'storage-name:snippets/<file>.yaml' form" >&2
+					fn_help >&2
+					return 1
+				fi
+				;;
+		esac
+	elif test "${my_civendor}" != "none" && test -n "${my_vm_alias}" && test -n "${PROXMOX_SNIPPET_STORAGE:-}"; then
+		# image aliases default to their matching civendor template
+		my_cicustom="vendor=${PROXMOX_SNIPPET_STORAGE}:snippets/civendor-${my_vm_alias}.yaml"
+	elif test -n "${PROXMOX_VENDOR_SNIPPET:-}" && test -n "${PROXMOX_SNIPPET_STORAGE:-}"; then
+		my_cicustom="vendor=${PROXMOX_SNIPPET_STORAGE}:snippets/${PROXMOX_VENDOR_SNIPPET}"
+	fi
 	if test -z "${my_vcpu_limit}"; then
 		my_vcpu_limit="${my_vcpus}"
 	fi
@@ -804,17 +1187,28 @@ main() (
 	my_3digit="$(echo "${my_3digit}" | cut -c'2-4')"
 	my_vmid="${PROXMOX_ID_PREFIX}${my_3digit}"
 
+	if test -n "${my_vm}"; then
+		my_id_name='vmid'
+		my_os_display="    OS (image):    ${my_vm_image}"
+	else
+		my_id_name='ctid'
+		my_os_display="    OS:            ${my_os_tmpl}"
+	fi
+
 	{
 		echo ""
 		echo "    Host Node:     ${my_target_node}"
-		echo "    ctid:          ${my_vmid}"
+		echo "    ${my_id_name}:    ${my_vmid}"
 		if test -n "${PROXMOX_HA_ENABLE:-}"; then
 			echo "    HA Group:      ${my_ha_group}"
 		else
 			echo "    HA Group:      NOT ENABLED"
 		fi
 		echo ""
-		echo "    OS:            ${my_os_tmpl}"
+		echo "${my_os_display}"
+		if test -n "${my_cicustom}"; then
+			echo "    Civendor:    ${my_cicustom}"
+		fi
 		echo "    RAM:           ${my_ram}MB"
 		echo "    / (rootfs):    ${my_os_storage}GB"
 		echo "    /mnt/storage:  ${my_extra_storage}GB"
@@ -823,9 +1217,15 @@ main() (
 		echo ""
 	} >&2
 
-	my_task_id="$(
-		fn_create_lxc "${my_target_node}" "${PROXMOX_VLAN:-}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_os_storage}" "${my_extra_storage}" "${my_vcpus}" "${my_vcpu_limit}" "${my_vmid}"
-	)"
+	if test -n "${my_vm}"; then
+		my_task_id="$(
+			fn_create_vm "${my_target_node}" "${PROXMOX_VLAN:-}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_vm_image}" "${my_ram}" "${my_os_storage}" "${my_vcpus}" "${my_vcpu_limit}" "${my_vmid}" "${my_cicustom}" "${my_ciuser}" "${my_extra_storage}"
+		)"
+	else
+		my_task_id="$(
+			fn_create_lxc "${my_target_node}" "${PROXMOX_VLAN:-}" "${my_next_unit}" "${my_hostname}" "${my_pubkeys}" "${my_os_tmpl}" "${my_ram}" "${my_os_storage}" "${my_extra_storage}" "${my_vcpus}" "${my_vcpu_limit}" "${my_vmid}"
+		)"
+	fi
 	{
 		echo "Waiting for ${my_task_id}..."
 		fn_wait_status "${my_target_node}" "${my_task_id}"

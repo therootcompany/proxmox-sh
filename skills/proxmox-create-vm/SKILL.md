@@ -1,8 +1,9 @@
 ---
 name: proxmox-create-vm
 description:
-  Create LXC containers on Proxmox with proxmox-create. Use when provisioning new VMs,
-  choosing sizing, or understanding VMID/IP assignment.
+  Create LXC containers and KVM cloud-init VMs on Proxmox with proxmox-create.
+  Use when provisioning new containers or VMs, choosing sizing, or understanding
+  VMID/IP assignment.
 ---
 
 ## Creating an LXC Container
@@ -60,6 +61,36 @@ Direct:  tls-10-11-4-209.<DIRECT_IP_DOMAIN>
   the VNET/bridge and storage pool exist on the target node.
 - **"already exists"** -- the VMID is taken. `proxmox-create` auto-increments,
   so this is rare. If it happens, retry.
+
+## KVM Cloud-Init VMs (--kvm)
+
+For cloud-init KVM VMs (private network; public 443 proxied by the TLS router):
+
+```sh
+proxmox-create --kvm debian13 <hostname>                    # image alias
+proxmox-create --import 'sharedstor:import/<file>.qcow2' <hostname>
+proxmox-create --kvm alpine24 --ciuser app <hostname>
+```
+
+- `--os`/`--ct`/`--template <name-or-vztmpl-path>` create an LXC container.
+- `--kvm`/`--import <name-or-import-path>` create a KVM cloud-init VM
+  (`debian13`, `debian12`, `alpine24`, `ubuntu24`, or
+  `[storage:]import/<file>.qcow2`).
+- The two are mutually exclusive: either a CT or a VM.
+- Vendor template (e.g. QGA): `--civendor <image>` — the `--kvm <image>`
+  (`debian13`, `debian12`, `alpine24`, `ubuntu24` → `civendor-<image>.yaml`
+  from `PROXMOX_SNIPPET_STORAGE`), or `--civendor '<file>.yaml'` /
+  `'storage-name:snippets/<file>.yaml'`; `--civendor none` disables it.
+  `PROXMOX_VENDOR_SNIPPET` is the last fallback.
+- `--ciuser <name>` creates a named cloud-init user (wheel + your keys);
+  the default is `app` (PVE's own default, root, is unusable on Alpine —
+  root refuses key auth). Privilege escalation on Alpine: no `sudo`
+  binary, but `doas` works passwordless (wheel group, default doas.conf).
+- **`runcmd` runs ONCE per disk.** Changing the vendor snippet and rebuilding
+  the ISO re-runs config-stage modules but not `runcmd` — for snippet fixes,
+  create a fresh guest, don't reboot.
+- Log in as the `--ciuser` user (default `app`). Fresh disks change host
+  keys (`ssh-keygen -R`).
 
 ## Container Layout
 

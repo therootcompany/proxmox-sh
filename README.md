@@ -8,7 +8,8 @@ Scripts to quickly deploy LXCs with Proxmox and expose them with Caddy.
 -   Configure
     -   `env-switch`
 -   Usage
-    -   `proxmox-add` (to create an LXC)
+    -   `proxmox-create --env <env> --os <name>` (to create an LXC)
+    -   `proxmox-create --env <env> --kvm <image>` (to create a KVM cloud-init VM)
     -   `caddy-add` (to expose LXC via TLS/HTTPS)
 -   Generate an API Token
 -   Grant Permissions to an API Token
@@ -47,7 +48,7 @@ See also:
 -   [~/.config/proxmox-sh/current.env](./example.proxmox-sh.env)
 -   [~/.config/caddy-sh/current.env](./example.proxmox-sh.env)
 
-# How to Create LXCs
+# How to Create VMs
 
 ```sh
 proxmox-create
@@ -55,10 +56,11 @@ proxmox-create
 
 ```text
 USAGE
-    proxmox-create <hostname> [ssh-pubkey-file-url-or-string]
+    proxmox-create [--env <name>] [--os <tmpl> | --kvm <qcow2>] <hostname> [ssh-pubkey-file-url-or-string]
 
 EXAMPLE
-    proxmox-create 'example1.1101.c.bnna.net' ~/.ssh/id_rsa.pub
+    proxmox-create --env 'prod' --os debian13 'web-01' ~/.ssh/id_ed25519.pub
+    proxmox-create --env 'dev' --kvm debian13 'web-01' ~/.ssh/id_ed25519.pub
 
 DEFAULT SSH KEYS (only key comments are shown, for brevity)
     johndoe@macbook.local
