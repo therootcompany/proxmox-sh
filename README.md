@@ -50,6 +50,11 @@ See also:
 
 # How to Create VMs
 
+- `--os <name>` — lightweight, performant LXC / OCI (Docker) container
+  (shares host kernel; dynamically scalable RAM and CPU)
+- `--kvm <image>` — full KVM (its own kernel, cloud-init; 0-downtime
+  migrations between hosts)
+
 ```sh
 proxmox-create
 ```
