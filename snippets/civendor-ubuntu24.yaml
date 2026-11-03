@@ -1,0 +1,25 @@
+#cloud-config
+# Ubuntu 24.04 (generic cloud) vendor template — private-network guests
+# (public 443 proxied to the guest by the TLS router).
+#
+# - DNS: rendered natively from cloud-init (no fix needed).
+# - QGA: installed + started (enable --now is idempotent if the image
+#   already ships it).
+# - Extra storage: the script's second disk (PVE scsi1) is the one sd* disk
+#   with no mounted filesystem and no partition table (device naming is not
+#   stable: the root image may be sda or sdb); format it ext4 and mount it
+#   at /mnt/storage (fstab entry by UUID).
+packages:
+  - qemu-guest-agent
+  - e2fsprogs
+  - vim
+  - screen
+  - fish
+  - zstd
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+  - for b_disk in /dev/sd?; do test -b "$b_disk" || continue; mount | grep -q "^$b_disk " && continue; ls "$b_disk"[0-9] >/dev/null 2>&1 && continue; b_extra="$b_disk"; break; done
+  - if test -n "$b_extra"; then mkfs.ext4 "$b_extra"; fi
+  - if test -n "$b_extra"; then b_extra_uuid=$(tune2fs -l "$b_extra" | sed -n 's/^Filesystem UUID:[[:space:]]*//p'); fi
+  - if test -n "$b_extra_uuid"; then printf 'UUID=%s /mnt/storage ext4 defaults 0 2\n' "$b_extra_uuid" >> /etc/fstab; fi
+  - mkdir -p /mnt/storage && mount /mnt/storage
